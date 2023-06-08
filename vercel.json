@@ -2,9 +2,8 @@
   "version": 2,
   "builds": [
     {
-      "src": "n8n.toml",
-      "use": "@vercel/static-build",
-      "config": {}
+      "src": "public/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -12,6 +11,5 @@
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ],
-  "output": "public"
+  ]
 }
