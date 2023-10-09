@@ -2,11 +2,13 @@ import type { ClientOAuth2Options } from '@n8n/client-oauth2';
 import { ClientOAuth2 } from '@n8n/client-oauth2';
 import Csrf from 'csrf';
 import express from 'express';
-import get from 'lodash.get';
-import omit from 'lodash.omit';
-import set from 'lodash.set';
-import split from 'lodash.split';
-import unset from 'lodash.unset';
+import pkceChallenge from 'pkce-challenge';
+import * as qs from 'querystring';
+import get from 'lodash/get';
+import omit from 'lodash/omit';
+import set from 'lodash/set';
+import split from 'lodash/split';
+import unset from 'lodash/unset';
 import { Credentials, UserSettings } from 'n8n-core';
 import type {
 	WorkflowExecuteMode,
@@ -31,6 +33,8 @@ import { ExternalHooks } from '@/ExternalHooks';
 import config from '@/config';
 import { getInstanceBaseUrl } from '@/UserManagement/UserManagementHelper';
 import { Container } from 'typedi';
+
+import * as WorkflowExecuteAdditionalData from '@/WorkflowExecuteAdditionalData';
 
 export const oauth2CredentialController = express.Router();
 
@@ -79,12 +83,15 @@ oauth2CredentialController.get(
 			throw new ResponseHelper.InternalServerError((error as Error).message);
 		}
 
+		const additionalData = await WorkflowExecuteAdditionalData.getBase(req.user.id);
+
 		const credentialType = (credential as unknown as ICredentialsEncrypted).type;
 
 		const mode: WorkflowExecuteMode = 'internal';
 		const timezone = config.getEnv('generic.timezone');
 		const credentialsHelper = new CredentialsHelper(encryptionKey);
 		const decryptedDataOriginal = await credentialsHelper.getDecrypted(
+			additionalData,
 			credential as INodeCredentialsDetails,
 			credentialType,
 			mode,
@@ -105,6 +112,7 @@ oauth2CredentialController.get(
 		}
 
 		const oauthCredentials = credentialsHelper.applyDefaultsAndOverwrites(
+			additionalData,
 			decryptedDataOriginal,
 			credentialType,
 			mode,
@@ -120,15 +128,21 @@ oauth2CredentialController.get(
 		};
 		const stateEncodedStr = Buffer.from(JSON.stringify(state)).toString('base64');
 
+		const scopes = get(oauthCredentials, 'scope', 'openid') as string;
 		const oAuthOptions: ClientOAuth2Options = {
 			clientId: get(oauthCredentials, 'clientId') as string,
 			clientSecret: get(oauthCredentials, 'clientSecret', '') as string,
 			accessTokenUri: get(oauthCredentials, 'accessTokenUrl', '') as string,
 			authorizationUri: get(oauthCredentials, 'authUrl', '') as string,
 			redirectUri: `${getInstanceBaseUrl()}/${restEndpoint}/oauth2-credential/callback`,
-			scopes: split(get(oauthCredentials, 'scope', 'openid,') as string, ','),
+			scopes: split(scopes, ','),
+			scopesSeparator: scopes.includes(',') ? ',' : ' ',
 			state: stateEncodedStr,
 		};
+		const authQueryParameters = get(oauthCredentials, 'authQueryParameters', '') as string;
+		if (authQueryParameters) {
+			oAuthOptions.query = qs.parse(authQueryParameters);
+		}
 
 		await Container.get(ExternalHooks).run('oauth2.authenticate', [oAuthOptions]);
 
@@ -142,6 +156,16 @@ oauth2CredentialController.get(
 		);
 		decryptedDataOriginal.csrfSecret = csrfSecret;
 
+		if (oauthCredentials.grantType === 'pkce') {
+			const { code_verifier, code_challenge } = pkceChallenge();
+			oAuthOptions.query = {
+				...oAuthOptions.query,
+				code_challenge,
+				code_challenge_method: 'S256',
+			};
+			decryptedDataOriginal.codeVerifier = code_verifier;
+		}
+
 		credentials.setData(decryptedDataOriginal, encryptionKey);
 		const newCredentialsData = credentials.getDataToSave() as unknown as ICredentialsDb;
 
@@ -151,26 +175,12 @@ oauth2CredentialController.get(
 		// Update the credentials in DB
 		await Db.collections.Credentials.update(req.query.id, newCredentialsData);
 
-		const authQueryParameters = get(oauthCredentials, 'authQueryParameters', '') as string;
-		let returnUri = oAuthObj.code.getUri();
-
-		// if scope uses comma, change it as the library always return then with spaces
-		if ((get(oauthCredentials, 'scope') as string).includes(',')) {
-			const data = returnUri.split('?')[1];
-			const scope = get(oauthCredentials, 'scope') as string;
-			const percentEncoded = [data, `scope=${encodeURIComponent(scope)}`].join('&');
-			returnUri = `${get(oauthCredentials, 'authUrl', '') as string}?${percentEncoded}`;
-		}
-
-		if (authQueryParameters) {
-			returnUri += `&${authQueryParameters}`;
-		}
-
-		LoggerProxy.verbose('OAuth2 authentication successful for new credential', {
+		LoggerProxy.verbose('OAuth2 authorization url created for credential', {
 			userId: req.user.id,
 			credentialId,
 		});
-		return returnUri;
+
+		return oAuthObj.code.getUri();
 	}),
 );
 
@@ -189,7 +199,6 @@ oauth2CredentialController.get(
 		try {
 			// realmId it's currently just use for the quickbook OAuth2 flow
 			const { code, state: stateEncoded } = req.query;
-
 			if (!code || !stateEncoded) {
 				return renderCallbackError(
 					res,
@@ -220,11 +229,13 @@ oauth2CredentialController.get(
 			}
 
 			const encryptionKey = await UserSettings.getEncryptionKey();
+			const additionalData = await WorkflowExecuteAdditionalData.getBase(state.cid);
 
 			const mode: WorkflowExecuteMode = 'internal';
 			const timezone = config.getEnv('generic.timezone');
 			const credentialsHelper = new CredentialsHelper(encryptionKey);
 			const decryptedDataOriginal = await credentialsHelper.getDecrypted(
+				additionalData,
 				credential as INodeCredentialsDetails,
 				(credential as unknown as ICredentialsEncrypted).type,
 				mode,
@@ -232,6 +243,7 @@ oauth2CredentialController.get(
 				true,
 			);
 			const oauthCredentials = credentialsHelper.applyDefaultsAndOverwrites(
+				additionalData,
 				decryptedDataOriginal,
 				(credential as unknown as ICredentialsEncrypted).type,
 				mode,
@@ -253,16 +265,23 @@ oauth2CredentialController.get(
 
 			let options: Partial<ClientOAuth2Options> = {};
 
+			const scopes = get(oauthCredentials, 'scope', 'openid') as string;
 			const oAuth2Parameters: ClientOAuth2Options = {
 				clientId: get(oauthCredentials, 'clientId') as string,
 				clientSecret: get(oauthCredentials, 'clientSecret', '') as string,
 				accessTokenUri: get(oauthCredentials, 'accessTokenUrl', '') as string,
 				authorizationUri: get(oauthCredentials, 'authUrl', '') as string,
 				redirectUri: `${getInstanceBaseUrl()}/${restEndpoint}/oauth2-credential/callback`,
-				scopes: split(get(oauthCredentials, 'scope', 'openid,') as string, ','),
+				scopes: split(scopes, ','),
+				scopesSeparator: scopes.includes(',') ? ',' : ' ',
+				ignoreSSLIssues: get(oauthCredentials, 'ignoreSSLIssues') as boolean,
 			};
 
-			if ((get(oauthCredentials, 'authentication', 'header') as string) === 'body') {
+			if (oauthCredentials.grantType === 'pkce') {
+				options = {
+					body: { code_verifier: decryptedDataOriginal.codeVerifier },
+				};
+			} else if ((get(oauthCredentials, 'authentication', 'header') as string) === 'body') {
 				options = {
 					body: {
 						client_id: get(oauthCredentials, 'clientId') as string,
@@ -307,7 +326,6 @@ oauth2CredentialController.get(
 				decryptedDataOriginal.oauthTokenData = oauthToken.data;
 			}
 
-			// eslint-disable-next-line @typescript-eslint/no-unsafe-call
 			unset(decryptedDataOriginal, 'csrfSecret');
 
 			const credentials = new Credentials(

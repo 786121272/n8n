@@ -5,6 +5,11 @@ import { FILESYSTEM_INTERACTION_NODE_TYPES, FILESYSTEM_REPORT } from '@/audit/co
 import { getRiskSection, saveManualTriggerWorkflow } from './utils';
 import * as testDb from '../shared/testDb';
 
+import { LoggerProxy } from 'n8n-workflow';
+import { getLogger } from '@/Logger';
+
+LoggerProxy.init(getLogger());
+
 beforeAll(async () => {
 	await testDb.init();
 });
@@ -26,11 +31,10 @@ test('should report filesystem interaction nodes', async () => {
 	);
 
 	const promises = Object.entries(map).map(async ([nodeType, nodeId]) => {
-		const details = {
+		const details = Db.collections.Workflow.create({
 			name: 'My Test Workflow',
 			active: false,
 			connections: {},
-			nodeTypes: {},
 			nodes: [
 				{
 					id: nodeId,
@@ -38,9 +42,10 @@ test('should report filesystem interaction nodes', async () => {
 					type: nodeType,
 					typeVersion: 1,
 					position: [0, 0] as [number, number],
+					parameters: {},
 				},
 			],
-		};
+		});
 
 		return Db.collections.Workflow.save(details);
 	});

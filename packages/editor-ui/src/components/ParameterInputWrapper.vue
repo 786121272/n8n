@@ -1,10 +1,10 @@
 <template>
-	<div>
+	<div data-test-id="parameter-input">
 		<parameter-input
 			ref="param"
 			:inputSize="inputSize"
 			:parameter="parameter"
-			:value="value"
+			:modelValue="modelValue"
 			:path="path"
 			:isReadOnly="isReadOnly"
 			:droppable="droppable"
@@ -16,19 +16,20 @@
 			:isForCredential="isForCredential"
 			:eventSource="eventSource"
 			:expressionEvaluated="expressionValueComputed"
+			:additionalExpressionData="resolvedAdditionalExpressionData"
 			:label="label"
-			:data-test-id="`parameter-input-${parameter.name}`"
+			:data-test-id="`parameter-input-${parsedParameterName}`"
+			:event-bus="eventBus"
 			@focus="onFocus"
 			@blur="onBlur"
 			@drop="onDrop"
 			@textInput="onTextInput"
-			@valueChanged="onValueChanged"
+			@update="onValueChanged"
 		/>
 		<input-hint
 			v-if="expressionOutput"
-			:class="$style.hint"
+			:class="{ [$style.hint]: true, 'ph-no-capture': isForCredential }"
 			data-test-id="parameter-expression-preview"
-			class="ph-no-capture"
 			:highlight="!!(expressionOutput && targetItem) && isInputParentOfActiveNode"
 			:hint="expressionOutput"
 			:singleLine="true"
@@ -50,6 +51,7 @@ import { mapStores } from 'pinia';
 import ParameterInput from '@/components/ParameterInput.vue';
 import InputHint from '@/components/ParameterInputHint.vue';
 import type {
+	IDataObject,
 	INodeProperties,
 	INodePropertyMode,
 	IParameterLabel,
@@ -59,10 +61,12 @@ import type {
 import { isResourceLocatorValue } from 'n8n-workflow';
 import type { INodeUi, IUpdateInformation, TargetItem } from '@/Interface';
 import { workflowHelpers } from '@/mixins/workflowHelpers';
-import { isValueExpression } from '@/utils';
+import { isValueExpression, parseResourceMapperFieldName } from '@/utils';
 import { useNDVStore } from '@/stores/ndv.store';
+import { useEnvironmentsStore, useExternalSecretsStore } from '@/stores';
 
-type ParamRef = InstanceType<typeof ParameterInput>;
+import type { EventBus } from 'n8n-design-system/utils';
+import { createEventBus } from 'n8n-design-system/utils';
 
 export default defineComponent({
 	name: 'parameter-input-wrapper',
@@ -71,10 +75,11 @@ export default defineComponent({
 		ParameterInput,
 		InputHint,
 	},
-	mounted() {
-		this.$on('optionSelected', this.optionSelected);
-	},
 	props: {
+		additionalExpressionData: {
+			type: Object as PropType<IDataObject>,
+			default: () => ({}),
+		},
 		isReadOnly: {
 			type: Boolean,
 		},
@@ -84,7 +89,7 @@ export default defineComponent({
 		path: {
 			type: String,
 		},
-		value: {
+		modelValue: {
 			type: [String, Number, Boolean, Array, Object] as PropType<NodeParameterValueType>,
 		},
 		droppable: {
@@ -124,25 +129,29 @@ export default defineComponent({
 				size: 'small',
 			}),
 		},
+		eventBus: {
+			type: Object as PropType<EventBus>,
+			default: () => createEventBus(),
+		},
 	},
 	computed: {
-		...mapStores(useNDVStore),
+		...mapStores(useNDVStore, useExternalSecretsStore, useEnvironmentsStore),
 		isValueExpression() {
-			return isValueExpression(this.parameter, this.value);
+			return isValueExpression(this.parameter, this.modelValue);
 		},
 		activeNode(): INodeUi | null {
 			return this.ndvStore.activeNode;
 		},
 		selectedRLMode(): INodePropertyMode | undefined {
 			if (
-				typeof this.value !== 'object' ||
+				typeof this.modelValue !== 'object' ||
 				this.parameter.type !== 'resourceLocator' ||
-				!isResourceLocatorValue(this.value)
+				!isResourceLocatorValue(this.modelValue)
 			) {
 				return undefined;
 			}
 
-			const mode = this.value.mode;
+			const mode = this.modelValue.mode;
 			if (mode) {
 				return this.parameter.modes?.find((m: INodePropertyMode) => m.name === mode);
 			}
@@ -166,7 +175,9 @@ export default defineComponent({
 			return this.ndvStore.isInputParentOfActiveNode;
 		},
 		expressionValueComputed(): string | null {
-			const value = isResourceLocatorValue(this.value) ? this.value.value : this.value;
+			const value = isResourceLocatorValue(this.modelValue)
+				? this.modelValue.value
+				: this.modelValue;
 			if (!this.activeNode || !this.isValueExpression || typeof value !== 'string') {
 				return null;
 			}
@@ -180,6 +191,7 @@ export default defineComponent({
 						inputNodeName: this.ndvStore.ndvInputNodeName,
 						inputRunIndex: this.ndvStore.ndvInputRunIndex,
 						inputBranchIndex: this.ndvStore.ndvInputBranchIndex,
+						additionalKeys: this.resolvedAdditionalExpressionData,
 					};
 				}
 
@@ -205,6 +217,18 @@ export default defineComponent({
 
 			return null;
 		},
+		resolvedAdditionalExpressionData() {
+			return {
+				$vars: this.environmentsStore.variablesAsObject,
+				...(this.externalSecretsStore.isEnterpriseExternalSecretsEnabled && this.isForCredential
+					? { $secrets: this.externalSecretsStore.secretsAsObject }
+					: {}),
+				...this.additionalExpressionData,
+			};
+		},
+		parsedParameterName() {
+			return parseResourceMapperFieldName(this.parameter?.name ?? '');
+		},
 	},
 	methods: {
 		onFocus() {
@@ -216,13 +240,8 @@ export default defineComponent({
 		onDrop(data: string) {
 			this.$emit('drop', data);
 		},
-		optionSelected(command: string) {
-			const paramRef = this.$refs.param as ParamRef | undefined;
-
-			paramRef?.$emit('optionSelected', command);
-		},
 		onValueChanged(parameterData: IUpdateInformation) {
-			this.$emit('valueChanged', parameterData);
+			this.$emit('update', parameterData);
 		},
 		onTextInput(parameterData: IUpdateInformation) {
 			this.$emit('textInput', parameterData);

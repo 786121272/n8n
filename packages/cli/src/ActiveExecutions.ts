@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+
+import { Container, Service } from 'typedi';
 import type {
 	IDeferredPromise,
 	IExecuteResponsePromiseData,
@@ -11,19 +10,16 @@ import type {
 import { createDeferredPromise, LoggerProxy } from 'n8n-workflow';
 
 import type { ChildProcess } from 'child_process';
-import { stringify } from 'flatted';
 import type PCancelable from 'p-cancelable';
-import * as Db from '@/Db';
 import type {
+	ExecutionPayload,
 	IExecutingWorkflowData,
 	IExecutionDb,
-	IExecutionFlattedDb,
 	IExecutionsCurrentSummary,
 	IWorkflowExecutionDataProcess,
 } from '@/Interfaces';
-import * as ResponseHelper from '@/ResponseHelper';
 import { isWorkflowIdValid } from '@/utils';
-import { Service } from 'typedi';
+import { ExecutionRepository } from '@db/repositories';
 
 @Service()
 export class ActiveExecutions {
@@ -43,7 +39,7 @@ export class ActiveExecutions {
 		if (executionId === undefined) {
 			// Is a new execution so save in DB
 
-			const fullExecutionData: IExecutionDb = {
+			const fullExecutionData: ExecutionPayload = {
 				data: executionData.executionData!,
 				mode: executionData.executionMode,
 				finished: false,
@@ -61,15 +57,9 @@ export class ActiveExecutions {
 				fullExecutionData.workflowId = workflowId;
 			}
 
-			const execution = ResponseHelper.flattenExecutionData(fullExecutionData);
-
-			const executionResult = await Db.collections.Execution.save(execution as IExecutionFlattedDb);
-			// TODO: what is going on here?
-			executionId =
-				typeof executionResult.id === 'object'
-					? // @ts-ignore
-					  executionResult.id!.toString()
-					: executionResult.id + '';
+			const executionResult =
+				await Container.get(ExecutionRepository).createNewExecution(fullExecutionData);
+			executionId = executionResult.id;
 			if (executionId === undefined) {
 				throw new Error('There was an issue assigning an execution id to the execution');
 			}
@@ -77,14 +67,14 @@ export class ActiveExecutions {
 		} else {
 			// Is an existing execution we want to finish so update in DB
 
-			const execution: Pick<IExecutionFlattedDb, 'id' | 'data' | 'waitTill' | 'status'> = {
+			const execution: Pick<IExecutionDb, 'id' | 'data' | 'waitTill' | 'status'> = {
 				id: executionId,
-				data: stringify(executionData.executionData!),
+				data: executionData.executionData!,
 				waitTill: null,
 				status: executionStatus,
 			};
 
-			await Db.collections.Execution.update(executionId, execution);
+			await Container.get(ExecutionRepository).updateExistingExecution(executionId, execution);
 		}
 
 		this.activeExecutions[executionId] = {
@@ -102,7 +92,7 @@ export class ActiveExecutions {
 	 * Attaches an execution
 	 *
 	 */
-	// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+
 	attachWorkflowExecution(executionId: string, workflowExecution: PCancelable<IRun>) {
 		if (this.activeExecutions[executionId] === undefined) {
 			throw new Error(
@@ -131,8 +121,11 @@ export class ActiveExecutions {
 			return;
 		}
 
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
 		this.activeExecutions[executionId].responsePromise?.resolve(response);
+	}
+
+	getPostExecutePromiseCount(executionId: string): number {
+		return this.activeExecutions[executionId]?.postExecutePromises.length ?? 0;
 	}
 
 	/**
@@ -145,7 +138,7 @@ export class ActiveExecutions {
 		}
 
 		// Resolve all the waiting promises
-		// eslint-disable-next-line no-restricted-syntax
+
 		for (const promise of this.activeExecutions[executionId].postExecutePromises) {
 			promise.resolve(fullRunData);
 		}
@@ -184,7 +177,6 @@ export class ActiveExecutions {
 			this.activeExecutions[executionId].workflowExecution!.cancel();
 		}
 
-		// eslint-disable-next-line consistent-return
 		return this.getPostExecutePromise(executionId);
 	}
 
@@ -204,7 +196,6 @@ export class ActiveExecutions {
 
 		this.activeExecutions[executionId].postExecutePromises.push(waitPromise);
 
-		// eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
 		return waitPromise.promise();
 	}
 
@@ -216,7 +207,7 @@ export class ActiveExecutions {
 		const returnData: IExecutionsCurrentSummary[] = [];
 
 		let data;
-		// eslint-disable-next-line no-restricted-syntax
+
 		for (const id of Object.keys(this.activeExecutions)) {
 			data = this.activeExecutions[id];
 			returnData.push({

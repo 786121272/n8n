@@ -1,17 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable no-restricted-syntax */
-/* eslint-disable no-console */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
+
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/restrict-template-expressions */
+
 /* eslint-disable @typescript-eslint/no-shadow */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/prefer-optional-chain */
-/* eslint-disable no-param-reassign */
-/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
-/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import type { IProcessMessage } from 'n8n-core';
-import { BinaryDataManager, WorkflowExecute } from 'n8n-core';
+import { WorkflowExecute } from 'n8n-core';
 
 import type {
 	ExecutionError,
@@ -34,20 +29,21 @@ import { fork } from 'child_process';
 
 import { ActiveExecutions } from '@/ActiveExecutions';
 import config from '@/config';
-import * as Db from '@/Db';
 import { ExternalHooks } from '@/ExternalHooks';
 import type {
-	IExecutionFlattedDb,
+	IExecutionResponse,
 	IProcessMessageDataHook,
 	IWorkflowExecutionDataProcess,
 	IWorkflowExecutionDataProcessWithExecution,
 } from '@/Interfaces';
 import { NodeTypes } from '@/NodeTypes';
 import type { Job, JobData, JobQueue, JobResponse } from '@/Queue';
+// eslint-disable-next-line import/no-cycle
 import { Queue } from '@/Queue';
-import * as ResponseHelper from '@/ResponseHelper';
 import * as WebhookHelpers from '@/WebhookHelpers';
+// eslint-disable-next-line import/no-cycle
 import * as WorkflowHelpers from '@/WorkflowHelpers';
+// eslint-disable-next-line import/no-cycle
 import * as WorkflowExecuteAdditionalData from '@/WorkflowExecuteAdditionalData';
 import { generateFailedExecutionFromError } from '@/WorkflowHelpers';
 import { initErrorHandling } from '@/ErrorReporting';
@@ -57,6 +53,7 @@ import { eventBus } from './eventbus';
 import { recoverExecutionDataFromEventLogMessages } from './eventbus/MessageEventBus/recoverEvents';
 import { Container } from 'typedi';
 import { InternalHooks } from './InternalHooks';
+import { ExecutionRepository } from '@db/repositories';
 
 export class WorkflowRunner {
 	activeExecutions: ActiveExecutions;
@@ -127,14 +124,22 @@ export class WorkflowRunner {
 				}
 			}
 
-			const executionFlattedData = await Db.collections.Execution.findOneBy({ id: executionId });
-
-			void Container.get(InternalHooks).onWorkflowCrashed(
+			const executionFlattedData = await Container.get(ExecutionRepository).findSingleExecution(
 				executionId,
-				executionMode,
-				executionFlattedData?.workflowData,
-				executionFlattedData?.metadata,
+				{
+					includeData: true,
+				},
 			);
+
+			if (executionFlattedData) {
+				void Container.get(InternalHooks).onWorkflowCrashed(
+					executionId,
+					executionMode,
+					executionFlattedData?.workflowData,
+					// TODO: get metadata to be sent here
+					// executionFlattedData?.metadata,
+				);
+			}
 		} catch {
 			// Ignore errors
 		}
@@ -181,43 +186,44 @@ export class WorkflowRunner {
 				executionId,
 				responsePromise,
 			);
-		} else if (executionsProcess === 'main') {
-			executionId = await this.runMainProcess(data, loadStaticData, executionId, responsePromise);
 		} else {
-			executionId = await this.runSubprocess(data, loadStaticData, executionId, responsePromise);
+			if (executionsProcess === 'main') {
+				executionId = await this.runMainProcess(data, loadStaticData, executionId, responsePromise);
+			} else {
+				executionId = await this.runSubprocess(data, loadStaticData, executionId, responsePromise);
+			}
+			void Container.get(InternalHooks).onWorkflowBeforeExecute(executionId, data);
 		}
 
-		void Container.get(InternalHooks).onWorkflowBeforeExecute(executionId, data);
-
-		const postExecutePromise = this.activeExecutions.getPostExecutePromise(executionId);
-
-		const externalHooks = Container.get(ExternalHooks);
-		postExecutePromise
-			.then(async (executionData) => {
-				void Container.get(InternalHooks).onWorkflowPostExecute(
-					executionId!,
-					data.workflowData,
-					executionData,
-					data.userId,
-				);
-			})
-			.catch((error) => {
-				ErrorReporter.error(error);
-				console.error('There was a problem running internal hook "onWorkflowPostExecute"', error);
-			});
-
-		if (externalHooks.exists('workflow.postExecute')) {
+		// only run these when not in queue mode or when the execution is manual,
+		// since these calls are now done by the worker directly
+		if (executionsMode !== 'queue' || data.executionMode === 'manual') {
+			const postExecutePromise = this.activeExecutions.getPostExecutePromise(executionId);
+			const externalHooks = Container.get(ExternalHooks);
 			postExecutePromise
 				.then(async (executionData) => {
-					await externalHooks.run('workflow.postExecute', [
-						executionData,
+					void Container.get(InternalHooks).onWorkflowPostExecute(
+						executionId!,
 						data.workflowData,
-						executionId,
-					]);
+						executionData,
+						data.userId,
+					);
+					if (externalHooks.exists('workflow.postExecute')) {
+						try {
+							await externalHooks.run('workflow.postExecute', [
+								executionData,
+								data.workflowData,
+								executionId,
+							]);
+						} catch (error) {
+							ErrorReporter.error(error);
+							console.error('There was a problem running hook "workflow.postExecute"', error);
+						}
+					}
 				})
 				.catch((error) => {
 					ErrorReporter.error(error);
-					console.error('There was a problem running hook "workflow.postExecute"', error);
+					console.error('There was a problem running internal hook "onWorkflowPostExecute"', error);
 				});
 		}
 
@@ -321,7 +327,7 @@ export class WorkflowRunner {
 				executionId,
 			});
 
-			additionalData.sendMessageToUI = WorkflowExecuteAdditionalData.sendMessageToUI.bind({
+			additionalData.sendDataToUI = WorkflowExecuteAdditionalData.sendDataToUI.bind({
 				sessionId: data.sessionId,
 			});
 
@@ -338,19 +344,12 @@ export class WorkflowRunner {
 			} else if (
 				data.runData === undefined ||
 				data.startNodes === undefined ||
-				data.startNodes.length === 0 ||
-				data.destinationNode === undefined
+				data.startNodes.length === 0
 			) {
 				Logger.debug(`Execution ID ${executionId} will run executing all nodes.`, { executionId });
 				// Execute all nodes
 
-				let startNode;
-				if (
-					data.startNodes?.length === 1 &&
-					Object.keys(data.pinData ?? {}).includes(data.startNodes[0])
-				) {
-					startNode = workflow.getNode(data.startNodes[0]) ?? undefined;
-				}
+				const startNode = WorkflowHelpers.getExecutionStartNode(data, workflow);
 
 				// Can execute without webhook so go on
 				const workflowExecute = new WorkflowExecute(additionalData, data.executionMode);
@@ -503,7 +502,7 @@ export class WorkflowRunner {
 
 				const queueRecoveryInterval = config.getEnv('queue.bull.queueRecoveryInterval');
 
-				const racingPromises: Array<Promise<JobResponse | object>> = [jobData];
+				const racingPromises: Array<Promise<JobResponse>> = [jobData];
 
 				let clearWatchdogInterval;
 				if (queueRecoveryInterval > 0) {
@@ -521,7 +520,7 @@ export class WorkflowRunner {
 					 ************************************************ */
 					let watchDogInterval: NodeJS.Timeout | undefined;
 
-					const watchDog: Promise<object> = new Promise((res) => {
+					const watchDog: Promise<JobResponse> = new Promise((res) => {
 						watchDogInterval = setInterval(async () => {
 							const currentJob = await this.jobQueue.getJob(job.id);
 							// When null means job is finished (not found in queue)
@@ -542,8 +541,11 @@ export class WorkflowRunner {
 					};
 				}
 
+				let racingPromisesResult: JobResponse = {
+					success: false,
+				};
 				try {
-					await Promise.race(racingPromises);
+					racingPromisesResult = await Promise.race(racingPromises);
 					if (clearWatchdogInterval !== undefined) {
 						clearWatchdogInterval();
 					}
@@ -566,19 +568,48 @@ export class WorkflowRunner {
 					reject(error);
 				}
 
-				const executionDb = (await Db.collections.Execution.findOneBy({
-					id: executionId,
-				})) as IExecutionFlattedDb;
-				const fullExecutionData = ResponseHelper.unflattenExecutionData(executionDb);
-				const runData = {
-					data: fullExecutionData.data,
+				// optimization: only pull and unflatten execution data from the Db when it is needed
+				const executionHasPostExecutionPromises =
+					this.activeExecutions.getPostExecutePromiseCount(executionId) > 0;
+
+				if (executionHasPostExecutionPromises) {
+					Logger.debug(
+						`Reading execution data for execution ${executionId} from db for PostExecutionPromise.`,
+					);
+				} else {
+					Logger.debug(
+						`Skipping execution data for execution ${executionId} since there are no PostExecutionPromise.`,
+					);
+				}
+
+				const fullExecutionData = await Container.get(ExecutionRepository).findSingleExecution(
+					executionId,
+					{
+						includeData: executionHasPostExecutionPromises,
+						unflattenData: executionHasPostExecutionPromises,
+					},
+				);
+				if (!fullExecutionData) {
+					return reject(new Error(`Could not find execution with id "${executionId}"`));
+				}
+
+				const runData: IRun = {
+					data: {},
 					finished: fullExecutionData.finished,
 					mode: fullExecutionData.mode,
 					startedAt: fullExecutionData.startedAt,
 					stoppedAt: fullExecutionData.stoppedAt,
 				} as IRun;
 
+				if (executionHasPostExecutionPromises) {
+					runData.data = (fullExecutionData as IExecutionResponse).data;
+				}
+
+				// NOTE: due to the optimization of not loading the execution data from the db when no post execution promises are present,
+				// the execution data in runData.data MAY not be available here.
+				// This means that any function expecting with runData has to check if the runData.data defined from this point
 				this.activeExecutions.remove(executionId, runData);
+
 				// Normally also static data should be supplied here but as it only used for sending
 				// data to editor-UI is not needed.
 				await hooks.executeHookFunctions('workflowExecuteAfter', [runData]);
@@ -592,13 +623,12 @@ export class WorkflowRunner {
 						workflowSettings.saveDataSuccessExecution ??
 						config.getEnv('executions.saveDataOnSuccess');
 
-					const workflowDidSucceed = !runData.data.resultData.error;
+					const workflowDidSucceed = !racingPromisesResult.error;
 					if (
 						(workflowDidSucceed && saveDataSuccessExecution === 'none') ||
 						(!workflowDidSucceed && saveDataErrorExecution === 'none')
 					) {
-						await Db.collections.Execution.delete(executionId);
-						await BinaryDataManager.getInstance().markDataForDeletionByExecutionId(executionId);
+						await Container.get(ExecutionRepository).softDelete(executionId);
 					}
 					// eslint-disable-next-line id-denylist
 				} catch (err) {
@@ -705,11 +735,11 @@ export class WorkflowRunner {
 				if (responsePromise) {
 					responsePromise.resolve(WebhookHelpers.decodeWebhookResponse(message.data.response));
 				}
-			} else if (message.type === 'sendMessageToUI') {
+			} else if (message.type === 'sendDataToUI') {
 				// eslint-disable-next-line @typescript-eslint/no-unsafe-call
-				WorkflowExecuteAdditionalData.sendMessageToUI.bind({ sessionId: data.sessionId })(
-					message.data.source,
-					message.data.message,
+				WorkflowExecuteAdditionalData.sendDataToUI.bind({ sessionId: data.sessionId })(
+					message.data.type,
+					message.data.data,
 				);
 			} else if (message.type === 'processError') {
 				clearTimeout(executionTimeout);
@@ -797,7 +827,7 @@ export class WorkflowRunner {
 				// They will display as unknown to the user
 				// Instead of pending forever as executing when it
 				// actually isn't anymore.
-				// eslint-disable-next-line @typescript-eslint/await-thenable, no-await-in-loop
+
 				this.activeExecutions.remove(executionId);
 			}
 

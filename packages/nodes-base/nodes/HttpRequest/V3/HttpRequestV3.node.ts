@@ -8,10 +8,20 @@ import type {
 	INodeType,
 	INodeTypeBaseDescription,
 	INodeTypeDescription,
+	IRequestOptionsSimplified,
 	JsonObject,
 } from 'n8n-workflow';
 
-import { BINARY_ENCODING, jsonParse, NodeApiError, NodeOperationError, sleep } from 'n8n-workflow';
+import {
+	BINARY_ENCODING,
+	NodeApiError,
+	NodeOperationError,
+	jsonParse,
+	removeCircularRefs,
+	sleep,
+} from 'n8n-workflow';
+
+import { keysToLowercase } from '@utils/utilities';
 
 import type { OptionsWithUri } from 'request-promise-native';
 
@@ -21,10 +31,10 @@ import {
 	binaryContentTypes,
 	getOAuth2AdditionalParameters,
 	prepareRequestBody,
+	reduceAsync,
 	replaceNullValues,
 	sanitizeUiMessage,
 } from '../GenericFunctions';
-import { keysToLowercase } from '../../../utils/utilities';
 
 function toText<T>(data: T) {
 	if (typeof data === 'object' && data !== null) {
@@ -939,6 +949,13 @@ export class HttpRequestV3 implements INodeType {
 						},
 					],
 				},
+				{
+					displayName:
+						"You can view the raw requests this node makes in your browser's developer console",
+					name: 'infoMessage',
+					type: 'notice',
+					default: '',
+				},
 			],
 		};
 	}
@@ -962,6 +979,7 @@ export class HttpRequestV3 implements INodeType {
 		let httpDigestAuth;
 		let httpHeaderAuth;
 		let httpQueryAuth;
+		let httpCustomAuth;
 		let oAuth1Api;
 		let oAuth2Api;
 		let nodeCredentialType;
@@ -984,6 +1002,10 @@ export class HttpRequestV3 implements INodeType {
 			} else if (genericAuthType === 'httpQueryAuth') {
 				try {
 					httpQueryAuth = await this.getCredentials('httpQueryAuth');
+				} catch {}
+			} else if (genericAuthType === 'httpCustomAuth') {
+				try {
+					httpCustomAuth = await this.getCredentials('httpCustomAuth');
 				} catch {}
 			} else if (genericAuthType === 'oAuth1Api') {
 				try {
@@ -1131,8 +1153,8 @@ export class HttpRequestV3 implements INodeType {
 			if (timeout) {
 				requestOptions.timeout = timeout;
 			} else {
-				// set default timeout to 1 hour
-				requestOptions.timeout = 3600000;
+				// set default timeout to 5 minutes
+				requestOptions.timeout = 300_000;
 			}
 			if (sendQuery && queryParameterArrays) {
 				Object.assign(requestOptions, {
@@ -1140,7 +1162,7 @@ export class HttpRequestV3 implements INodeType {
 				});
 			}
 
-			const parametersToKeyValue = (
+			const parametersToKeyValue = async (
 				accumulator: { [key: string]: any },
 				cur: { name: string; value: string; parameterType?: string; inputDataFieldName?: string },
 			) => {
@@ -1150,7 +1172,7 @@ export class HttpRequestV3 implements INodeType {
 					let uploadData: Buffer | Readable;
 					const itemBinaryData = items[itemIndex].binary![cur.inputDataFieldName];
 					if (itemBinaryData.id) {
-						uploadData = this.helpers.getBinaryStream(itemBinaryData.id);
+						uploadData = await this.helpers.getBinaryStream(itemBinaryData.id);
 					} else {
 						uploadData = Buffer.from(itemBinaryData.data, BINARY_ENCODING);
 					}
@@ -1171,7 +1193,7 @@ export class HttpRequestV3 implements INodeType {
 			// Get parameters defined in the UI
 			if (sendBody && bodyParameters) {
 				if (specifyBody === 'keypair' || bodyContentType === 'multipart-form-data') {
-					requestOptions.body = prepareRequestBody(
+					requestOptions.body = await prepareRequestBody(
 						bodyParameters,
 						bodyContentType,
 						nodeVersion,
@@ -1222,7 +1244,7 @@ export class HttpRequestV3 implements INodeType {
 					const itemBinaryData = this.helpers.assertBinaryData(itemIndex, inputDataFieldName);
 
 					if (itemBinaryData.id) {
-						uploadData = this.helpers.getBinaryStream(itemBinaryData.id);
+						uploadData = await this.helpers.getBinaryStream(itemBinaryData.id);
 						const metadata = await this.helpers.getBinaryMetadata(itemBinaryData.id);
 						contentLength = metadata.fileSize;
 					} else {
@@ -1243,7 +1265,7 @@ export class HttpRequestV3 implements INodeType {
 			// Get parameters defined in the UI
 			if (sendQuery && queryParameters) {
 				if (specifyQuery === 'keypair') {
-					requestOptions.qs = queryParameters.reduce(parametersToKeyValue, {});
+					requestOptions.qs = await reduceAsync(queryParameters, parametersToKeyValue);
 				} else if (specifyQuery === 'json') {
 					// query is specified using JSON
 					try {
@@ -1266,7 +1288,7 @@ export class HttpRequestV3 implements INodeType {
 			if (sendHeaders && headerParameters) {
 				let additionalHeaders: IDataObject = {};
 				if (specifyHeaders === 'keypair') {
-					additionalHeaders = headerParameters.reduce(parametersToKeyValue, {});
+					additionalHeaders = await reduceAsync(headerParameters, parametersToKeyValue);
 				} else if (specifyHeaders === 'json') {
 					// body is specified using JSON
 					try {
@@ -1338,6 +1360,24 @@ export class HttpRequestV3 implements INodeType {
 				};
 				authDataKeys.auth = ['pass'];
 			}
+			if (httpCustomAuth !== undefined) {
+				const customAuth = jsonParse<IRequestOptionsSimplified>(
+					(httpCustomAuth.json as string) || '{}',
+					{ errorMessage: 'Invalid Custom Auth JSON' },
+				);
+				if (customAuth.headers) {
+					requestOptions.headers = { ...requestOptions.headers, ...customAuth.headers };
+					authDataKeys.headers = Object.keys(customAuth.headers);
+				}
+				if (customAuth.body) {
+					requestOptions.body = { ...requestOptions.body, ...customAuth.body };
+					authDataKeys.body = Object.keys(customAuth.body);
+				}
+				if (customAuth.qs) {
+					requestOptions.qs = { ...requestOptions.qs, ...customAuth.qs };
+					authDataKeys.qs = Object.keys(customAuth.qs);
+				}
+			}
 
 			if (requestOptions.headers!.accept === undefined) {
 				if (responseFormat === 'json') {
@@ -1391,12 +1431,17 @@ export class HttpRequestV3 implements INodeType {
 		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 			response = promisesResponses.shift();
 			if (response!.status !== 'fulfilled') {
+				if (response.reason.statusCode === 429) {
+					response.reason.message =
+						"Try spacing your requests out using the batching settings under 'Options'";
+				}
 				if (!this.continueOnFail()) {
 					if (autoDetectResponseFormat && response.reason.error instanceof Buffer) {
 						response.reason.error = Buffer.from(response.reason.error as Buffer).toString();
 					}
 					throw new NodeApiError(this.getNode(), response as JsonObject, { itemIndex });
 				} else {
+					removeCircularRefs(response.reason as JsonObject);
 					// Return the actual reason as error
 					returnItems.push({
 						json: {
@@ -1411,8 +1456,6 @@ export class HttpRequestV3 implements INodeType {
 			}
 
 			response = response.value;
-
-			const url = this.getNodeParameter('url', itemIndex) as string;
 
 			let responseFormat = this.getNodeParameter(
 				'options.response.response.responseFormat',
@@ -1485,8 +1528,7 @@ export class HttpRequestV3 implements INodeType {
 					Object.assign(newItem.binary as IBinaryKeyData, items[itemIndex].binary);
 				}
 
-				const fileName = url.split('/').pop();
-
+				let binaryData: Buffer | Readable;
 				if (fullResponse) {
 					const returnItem: IDataObject = {};
 					for (const property of fullResponseProperties) {
@@ -1497,19 +1539,12 @@ export class HttpRequestV3 implements INodeType {
 					}
 
 					newItem.json = returnItem;
-
-					newItem.binary![outputPropertyName] = await this.helpers.prepareBinaryData(
-						response!.body as Buffer | Readable,
-						fileName,
-					);
+					binaryData = response!.body;
 				} else {
 					newItem.json = items[itemIndex].json;
-
-					newItem.binary![outputPropertyName] = await this.helpers.prepareBinaryData(
-						response! as Buffer | Readable,
-						fileName,
-					);
+					binaryData = response;
 				}
+				newItem.binary![outputPropertyName] = await this.helpers.prepareBinaryData(binaryData);
 
 				returnItems.push(newItem);
 			} else if (responseFormat === 'text') {
@@ -1607,6 +1642,6 @@ export class HttpRequestV3 implements INodeType {
 
 		returnItems = returnItems.map(replaceNullValues);
 
-		return this.prepareOutputData(returnItems);
+		return [returnItems];
 	}
 }

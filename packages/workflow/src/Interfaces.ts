@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// eslint-disable-next-line max-classes-per-file
+
 import type * as express from 'express';
-import type * as FormData from 'form-data';
+import type FormData from 'form-data';
 import type { IncomingHttpHeaders } from 'http';
 import type { Readable } from 'stream';
 import type { URLSearchParams } from 'url';
 import type { OptionsWithUri, OptionsWithUrl } from 'request';
-import type { RequestPromiseOptions, RequestPromiseAPI } from 'request-promise-native';
+import type { RequestPromiseOptions } from 'request-promise-native';
 import type { PathLike } from 'fs';
 
 import type { CODE_EXECUTION_MODES, CODE_LANGUAGES } from './Constants';
@@ -46,12 +46,6 @@ export interface IBinaryData {
 	fileExtension?: string;
 	fileSize?: string; // TODO: change this to number and store the actual value
 	id?: string;
-}
-
-export interface BinaryMetadata {
-	fileName?: string;
-	mimeType?: string;
-	fileSize: number;
 }
 
 // All properties in this interface except for
@@ -225,6 +219,7 @@ export abstract class ICredentialsHelper {
 	): Promise<ICredentials>;
 
 	abstract getDecrypted(
+		additionalData: IWorkflowExecuteAdditionalData,
 		nodeCredentials: INodeCredentialsDetails,
 		type: string,
 		mode: WorkflowExecuteMode,
@@ -570,7 +565,11 @@ export interface IN8nRequestOperationPaginationOffset extends IN8nRequestOperati
 }
 
 export interface IGetNodeParameterOptions {
+	contextNode?: INode;
+	// extract value from regex, works only when parameter type is resourceLocator
 	extractValue?: boolean;
+	// get raw value of parameter with unresolved expressions
+	rawExpressions?: boolean;
 }
 
 namespace ExecuteFunctions {
@@ -657,7 +656,7 @@ export type ICredentialTestFunction = (
 
 export interface ICredentialTestFunctions {
 	helpers: {
-		request: RequestPromiseAPI;
+		request: (uriOrObject: string | object, options?: object) => Promise<any>;
 	};
 }
 
@@ -671,6 +670,12 @@ interface JsonHelperFunctions {
 
 export interface FileSystemHelperFunctions {
 	createReadStream(path: PathLike): Promise<Readable>;
+	getStoragePath(): string;
+	writeContentToFile(
+		path: PathLike,
+		content: string | Buffer | Readable,
+		flag?: string,
+	): Promise<void>;
 }
 
 export interface BinaryHelperFunctions {
@@ -682,8 +687,13 @@ export interface BinaryHelperFunctions {
 	setBinaryDataBuffer(data: IBinaryData, binaryData: Buffer): Promise<IBinaryData>;
 	copyBinaryFile(): Promise<never>;
 	binaryToBuffer(body: Buffer | Readable): Promise<Buffer>;
-	getBinaryStream(binaryDataId: string, chunkSize?: number): Readable;
-	getBinaryMetadata(binaryDataId: string): Promise<BinaryMetadata>;
+	getBinaryPath(binaryDataId: string): string;
+	getBinaryStream(binaryDataId: string, chunkSize?: number): Promise<Readable>;
+	getBinaryMetadata(binaryDataId: string): Promise<{
+		fileName?: string;
+		mimeType?: string;
+		fileSize: number;
+	}>;
 }
 
 export interface NodeHelperFunctions {
@@ -729,9 +739,14 @@ export interface FunctionsBase {
 	getWorkflowStaticData(type: string): IDataObject;
 	getTimezone(): string;
 	getRestApiUrl(): string;
+	getInstanceBaseUrl(): string;
+	getInstanceId(): Promise<string>;
 
 	getMode?: () => WorkflowExecuteMode;
 	getActivationMode?: () => WorkflowActivateMode;
+
+	/** @deprecated */
+	prepareOutputData(outputData: INodeExecutionData[]): Promise<INodeExecutionData[][]>;
 }
 
 type FunctionsBaseWithRequiredKeys<Keys extends keyof FunctionsBase> = FunctionsBase & {
@@ -747,20 +762,36 @@ type BaseExecutionFunctions = FunctionsBaseWithRequiredKeys<'getMode'> & {
 	getInputSourceData(inputIndex?: number, inputName?: string): ISourceData;
 };
 
+// TODO: Create later own type only for Config-Nodes
 export type IExecuteFunctions = ExecuteFunctions.GetNodeParameterFn &
 	BaseExecutionFunctions & {
 		executeWorkflow(
 			workflowInfo: IExecuteWorkflowInfo,
 			inputData?: INodeExecutionData[],
 		): Promise<any>;
+		getInputConnectionData(
+			inputName: ConnectionTypes,
+			itemIndex: number,
+			inputIndex?: number,
+			nodeNameOverride?: string,
+		): Promise<unknown>;
 		getInputData(inputIndex?: number, inputName?: string): INodeExecutionData[];
-		prepareOutputData(
-			outputData: INodeExecutionData[],
-			outputIndex?: number,
-		): Promise<INodeExecutionData[][]>;
+		getNodeOutputs(): INodeOutputConfiguration[];
 		putExecutionToWait(waitTill: Date): Promise<void>;
 		sendMessageToUI(message: any): void;
 		sendResponse(response: IExecuteResponsePromiseData): void;
+
+		// TODO: Make this one then only available in the new config one
+		addInputData(
+			connectionType: ConnectionTypes,
+			data: INodeExecutionData[][] | ExecutionError,
+			runIndex?: number,
+		): { index: number };
+		addOutputData(
+			connectionType: ConnectionTypes,
+			currentNodeRunIndex: number,
+			data: INodeExecutionData[][] | ExecutionError,
+		): void;
 
 		nodeHelpers: NodeHelperFunctions;
 		helpers: RequestHelperFunctions &
@@ -775,6 +806,7 @@ export type IExecuteFunctions = ExecuteFunctions.GetNodeParameterFn &
 				): NodeExecutionWithMetadata[];
 				assertBinaryData(itemIndex: number, propertyName: string): IBinaryData;
 				getBinaryDataBuffer(itemIndex: number, propertyName: string): Promise<Buffer>;
+				copyInputItems(items: INodeExecutionData[], properties: string[]): IDataObject[];
 			};
 	};
 
@@ -881,10 +913,6 @@ export interface IWebhookFunctions extends FunctionsBaseWithRequiredKeys<'getMod
 	getRequestObject(): express.Request;
 	getResponseObject(): express.Response;
 	getWebhookName(): string;
-	prepareOutputData(
-		outputData: INodeExecutionData[],
-		outputIndex?: number,
-	): Promise<INodeExecutionData[][]>;
 	nodeHelpers: NodeHelperFunctions;
 	helpers: RequestHelperFunctions &
 		BaseHelperFunctions &
@@ -1004,6 +1032,7 @@ export interface INodeParameters {
 
 export type NodePropertyTypes =
 	| 'boolean'
+	| 'button'
 	| 'collection'
 	| 'color'
 	| 'dateTime'
@@ -1025,7 +1054,15 @@ export type CodeAutocompleteTypes = 'function' | 'functionItem';
 export type EditorType = 'code' | 'codeNodeEditor' | 'htmlEditor' | 'sqlEditor' | 'json';
 export type CodeNodeEditorLanguage = (typeof CODE_LANGUAGES)[number];
 export type CodeExecutionMode = (typeof CODE_EXECUTION_MODES)[number];
-export type SQLDialect = 'mssql' | 'mysql' | 'postgres';
+export type SQLDialect =
+	| 'StandardSQL'
+	| 'PostgreSQL'
+	| 'MySQL'
+	| 'MariaSQL'
+	| 'MSSQL'
+	| 'SQLite'
+	| 'Cassandra'
+	| 'PLSQL';
 
 export interface ILoadOptions {
 	routing?: {
@@ -1036,6 +1073,7 @@ export interface ILoadOptions {
 }
 
 export interface INodePropertyTypeOptions {
+	action?: string; // Supported by: button
 	alwaysOpenEditWindow?: boolean; // Supported by: json
 	codeAutocomplete?: CodeAutocompleteTypes; // Supported by: string
 	editor?: EditorType; // Supported by: string
@@ -1061,6 +1099,7 @@ export interface INodePropertyTypeOptions {
 export interface ResourceMapperTypeOptions {
 	resourceMapperMethod: string;
 	mode: 'add' | 'update' | 'upsert';
+	valuesLabel?: string;
 	fieldWords?: { singular: string; plural: string };
 	addAllFields?: boolean;
 	noFieldsError?: string;
@@ -1078,8 +1117,12 @@ export interface IDisplayOptions {
 		[key: string]: NodeParameterValue[] | undefined;
 	};
 	show?: {
+		// eslint-disable-next-line @typescript-eslint/naming-convention
+		'@version'?: number[];
 		[key: string]: NodeParameterValue[] | undefined;
 	};
+
+	hideOnCloud?: boolean;
 }
 
 export interface INodeProperties {
@@ -1103,6 +1146,13 @@ export interface INodeProperties {
 	extractValue?: INodePropertyValueExtractor;
 	modes?: INodePropertyMode[];
 	requiresDataPath?: 'single' | 'multiple';
+	doNotInherit?: boolean;
+	// set expected type for the value which would be used for validation and type casting
+	validateType?: FieldType;
+	// works only if validateType is set
+	// allows to skip validation during execution or set custom validation/casting logic inside node
+	// inline error messages would still be shown in UI
+	ignoreValidationDuringExecution?: boolean;
 }
 
 export interface INodePropertyModeTypeOptions {
@@ -1185,11 +1235,11 @@ export interface INodePropertyValueExtractorRegex extends INodePropertyValueExtr
 }
 
 export interface INodePropertyValueExtractorFunction {
-	(this: IExecuteSingleFunctions, value: string | NodeParameterValue):
-		| Promise<string | NodeParameterValue>
-		| (string | NodeParameterValue);
+	(
+		this: IExecuteSingleFunctions,
+		value: string | NodeParameterValue,
+	): Promise<string | NodeParameterValue> | (string | NodeParameterValue);
 }
-
 export type INodePropertyValueExtractor = INodePropertyValueExtractorRegex;
 
 export interface IParameterDependencies {
@@ -1215,12 +1265,35 @@ export interface ITriggerResponse {
 
 export type WebhookSetupMethodNames = 'checkExists' | 'create' | 'delete';
 
+export namespace MultiPartFormData {
+	export interface File {
+		filepath: string;
+		mimetype?: string;
+		originalFilename?: string;
+		newFilename: string;
+	}
+
+	export type Request = express.Request<
+		{},
+		{},
+		{
+			data: Record<string, string | string[]>;
+			files: Record<string, File | File[]>;
+		}
+	>;
+}
+
+export interface SupplyData {
+	metadata?: IDataObject;
+	response: unknown;
+}
+
 export interface INodeType {
 	description: INodeTypeDescription;
+	supplyData?(this: IExecuteFunctions): Promise<SupplyData>;
 	execute?(
 		this: IExecuteFunctions,
 	): Promise<INodeExecutionData[][] | NodeExecutionWithMetadata[][] | null>;
-	executeSingle?(this: IExecuteSingleFunctions): Promise<INodeExecutionData>;
 	poll?(this: IPollFunctions): Promise<INodeExecutionData[][] | null>;
 	trigger?(this: ITriggerFunctions): Promise<ITriggerResponse | undefined>;
 	webhook?(this: IWebhookFunctions): Promise<IWebhookResponseData>;
@@ -1250,6 +1323,16 @@ export interface INodeType {
 	};
 }
 
+/**
+ * This class serves as the base for all nodes using the new context API
+ * having this as a class enables us to identify these instances at runtime
+ */
+export abstract class Node {
+	abstract description: INodeTypeDescription;
+	execute?(context: IExecuteFunctions): Promise<INodeExecutionData[][]>;
+	webhook?(context: IWebhookFunctions): Promise<IWebhookResponseData>;
+}
+
 export interface IVersionedNodeType {
 	nodeVersions: {
 		[key: number]: INodeType;
@@ -1274,7 +1357,7 @@ export interface INodeCredentialDescription {
 	testedBy?: ICredentialTestRequest | string; // Name of a function inside `loadOptions.credentialTest`
 }
 
-export type INodeIssueTypes = 'credentials' | 'execution' | 'parameters' | 'typeUnknown';
+export type INodeIssueTypes = 'credentials' | 'execution' | 'input' | 'parameters' | 'typeUnknown';
 
 export interface INodeIssueObjectProperty {
 	[key: string]: string[];
@@ -1289,6 +1372,7 @@ export interface INodeIssueData {
 export interface INodeIssues {
 	execution?: boolean;
 	credentials?: INodeIssueObjectProperty;
+	input?: INodeIssueObjectProperty;
 	parameters?: INodeIssueObjectProperty;
 	typeUnknown?: boolean;
 	[key: string]: undefined | boolean | INodeIssueObjectProperty;
@@ -1416,14 +1500,77 @@ export interface IPostReceiveSort extends IPostReceiveBase {
 	};
 }
 
+export type ConnectionTypes =
+	| 'ai_chain'
+	| 'ai_document'
+	| 'ai_embedding'
+	| 'ai_languageModel'
+	| 'ai_memory'
+	| 'ai_outputParser'
+	| 'ai_retriever'
+	| 'ai_textSplitter'
+	| 'ai_tool'
+	| 'ai_vectorRetriever'
+	| 'ai_vectorStore'
+	| 'main';
+
+export const enum NodeConnectionType {
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiChain = 'ai_chain',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiDocument = 'ai_document',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiEmbedding = 'ai_embedding',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiLanguageModel = 'ai_languageModel',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiMemory = 'ai_memory',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiOutputParser = 'ai_outputParser',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiRetriever = 'ai_retriever',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiTextSplitter = 'ai_textSplitter',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiTool = 'ai_tool',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiVectorRetriever = 'ai_vectorRetriever',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	AiVectorStore = 'ai_vectorStore',
+	// eslint-disable-next-line @typescript-eslint/naming-convention
+	Main = 'main',
+}
+
+export interface INodeInputFilter {
+	// TODO: Later add more filter options like categories, subcatogries,
+	//       regex, allow to exclude certain nodes, ... ?
+	//       Potentially change totally after alpha/beta. Is not a breaking change after all.
+	nodes: string[]; // Allowed nodes
+}
+
+export interface INodeInputConfiguration {
+	displayName?: string;
+	maxConnections?: number;
+	required?: boolean;
+	filter?: INodeInputFilter;
+	type: ConnectionTypes;
+}
+
+export interface INodeOutputConfiguration {
+	displayName?: string;
+	required?: boolean;
+	type: ConnectionTypes;
+}
+
 export interface INodeTypeDescription extends INodeTypeBaseDescription {
 	version: number | number[];
 	defaults: INodeParameters;
 	eventTriggerDescription?: string;
 	activationMessage?: string;
-	inputs: string[];
+	inputs: Array<ConnectionTypes | INodeInputConfiguration> | string;
+	requiredInputs?: string | number[] | number; // Ony available with executionOrder => "v1"
 	inputNames?: string[];
-	outputs: string[];
+	outputs: Array<ConnectionTypes | INodeInputConfiguration> | string;
 	outputNames?: string[];
 	properties: INodeProperties[];
 	credentials?: INodeCredentialDescription[];
@@ -1462,7 +1609,7 @@ export interface INodeHookDescription {
 }
 
 export interface IWebhookData {
-	httpMethod: WebhookHttpMethod;
+	httpMethod: IHttpRequestMethods;
 	node: string;
 	path: string;
 	webhookDescription: IWebhookDescription;
@@ -1472,8 +1619,8 @@ export interface IWebhookData {
 }
 
 export interface IWebhookDescription {
-	[key: string]: WebhookHttpMethod | WebhookResponseMode | boolean | string | undefined;
-	httpMethod: WebhookHttpMethod | string;
+	[key: string]: IHttpRequestMethods | WebhookResponseMode | boolean | string | undefined;
+	httpMethod: IHttpRequestMethods | string;
 	isFullPath?: boolean;
 	name: 'default' | 'setup';
 	path: string;
@@ -1525,8 +1672,6 @@ export interface IWorkflowMetadata {
 	active: boolean;
 }
 
-export type WebhookHttpMethod = 'DELETE' | 'GET' | 'HEAD' | 'PATCH' | 'POST' | 'PUT' | 'OPTIONS';
-
 export interface IWebhookResponseData {
 	workflowData?: INodeExecutionData[][];
 	webhookResponse?: any;
@@ -1548,6 +1693,7 @@ export type LoadingDetails = {
 
 export type CredentialLoadingDetails = LoadingDetails & {
 	nodesToTestWith?: string[];
+	extends?: string[];
 };
 
 export type NodeLoadingDetails = LoadingDetails;
@@ -1605,6 +1751,10 @@ export interface IRunExecutionData {
 	executionData?: {
 		contextData: IExecuteContextData;
 		nodeExecutionStack: IExecuteData[];
+		metadata: {
+			// node-name: metadata by runIndex
+			[key: string]: ITaskMetadata[];
+		};
 		waitingExecution: IWaitingForExecution;
 		waitingExecutionSource: IWaitingForExecutionSource | null;
 	};
@@ -1616,14 +1766,25 @@ export interface IRunData {
 	[key: string]: ITaskData[];
 }
 
+export interface ITaskSubRunMetadata {
+	node: string;
+	runIndex: number;
+}
+
+export interface ITaskMetadata {
+	subRun?: ITaskSubRunMetadata[];
+}
+
 // The data that gets returned when a node runs
 export interface ITaskData {
 	startTime: number;
 	executionTime: number;
 	executionStatus?: ExecutionStatus;
 	data?: ITaskDataConnections;
+	inputOverride?: ITaskDataConnections;
 	error?: ExecutionError;
 	source: Array<ISourceData | null>; // Is an array as nodes have multiple inputs
+	metadata?: ITaskMetadata;
 }
 
 export interface ISourceData {
@@ -1717,8 +1878,9 @@ export interface IWorkflowExecuteAdditionalData {
 	httpResponse?: express.Response;
 	httpRequest?: express.Request;
 	restApiUrl: string;
+	instanceBaseUrl: string;
 	setExecutionStatus?: (status: ExecutionStatus) => void;
-	sendMessageToUI?: (source: string, message: any) => void;
+	sendDataToUI?: (type: string, data: IDataObject | IDataObject[]) => void;
 	timezone: string;
 	webhookBaseUrl: string;
 	webhookWaitingBaseUrl: string;
@@ -1727,6 +1889,7 @@ export interface IWorkflowExecuteAdditionalData {
 	executionTimeoutTimestamp?: number;
 	userId: string;
 	variables: IDataObject;
+	secretsHelpers: SecretsHelpersBase;
 }
 
 export type WorkflowExecuteMode =
@@ -1761,6 +1924,32 @@ export interface IWorkflowSettings {
 	saveManualExecutions?: 'DEFAULT' | boolean;
 	saveExecutionProgress?: 'DEFAULT' | boolean;
 	executionTimeout?: number;
+	executionOrder?: 'v0' | 'v1';
+}
+
+export interface WorkflowFEMeta {
+	onboardingId?: string;
+}
+
+export interface WorkflowTestData {
+	description: string;
+	input: {
+		workflowData: {
+			nodes: INode[];
+			connections: IConnections;
+			settings?: IWorkflowSettings;
+		};
+	};
+	output: {
+		nodeExecutionOrder?: string[];
+		nodeData: {
+			[key: string]: any[][];
+		};
+	};
+	trigger?: {
+		mode: WorkflowExecuteMode;
+		input: INodeExecutionData;
+	};
 }
 
 export type LogTypes = 'debug' | 'verbose' | 'info' | 'warn' | 'error';
@@ -1890,11 +2079,12 @@ export interface IConnectedNode {
 }
 
 export const enum OAuth2GrantType {
+	pkce = 'pkce',
 	authorizationCode = 'authorizationCode',
 	clientCredentials = 'clientCredentials',
 }
 export interface IOAuth2Credentials {
-	grantType: 'authorizationCode' | 'clientCredentials';
+	grantType: 'authorizationCode' | 'clientCredentials' | 'pkce';
 	clientId: string;
 	clientSecret: string;
 	accessTokenUrl: string;
@@ -1932,8 +2122,8 @@ export interface IExecutionsSummary {
 	id: string;
 	finished?: boolean;
 	mode: WorkflowExecuteMode;
-	retryOf?: string;
-	retrySuccessId?: string;
+	retryOf?: string | null;
+	retrySuccessId?: string | null;
 	waitTill?: Date;
 	startedAt: Date;
 	stoppedAt?: Date;
@@ -1943,11 +2133,11 @@ export interface IExecutionsSummary {
 	lastNodeExecuted?: string;
 	executionError?: ExecutionError;
 	nodeExecutionStatus?: {
-		[key: string]: IExceutionSummaryNodeExecutionResult;
+		[key: string]: IExecutionSummaryNodeExecutionResult;
 	};
 }
 
-export interface IExceutionSummaryNodeExecutionResult {
+export interface IExecutionSummaryNodeExecutionResult {
 	executionStatus: ExecutionStatus;
 	errors?: Array<{
 		name?: string;
@@ -1970,6 +2160,7 @@ export interface ResourceMapperField {
 	type?: FieldType;
 	removed?: boolean;
 	options?: INodePropertyOptions[];
+	readOnly?: boolean;
 }
 
 export type FieldType =
@@ -2015,7 +2206,7 @@ export interface IVersionNotificationSettings {
 }
 
 export interface IUserManagementSettings {
-	enabled: boolean;
+	quota: number;
 	showSetupOnFirstLoad?: boolean;
 	smtpSetup: boolean;
 	authenticationMethod: AuthenticationMethod;
@@ -2039,6 +2230,8 @@ export interface IPublicApiSettings {
 
 export type ILogLevel = 'info' | 'debug' | 'warn' | 'error' | 'verbose' | 'silent';
 
+export type ExpressionEvaluatorType = 'tmpl' | 'tournament';
+
 export interface IN8nUISettings {
 	endpointWebhook: string;
 	endpointWebhookTest: string;
@@ -2056,7 +2249,9 @@ export interface IN8nUISettings {
 	urlBaseWebhook: string;
 	urlBaseEditor: string;
 	versionCli: string;
+	releaseChannel: 'stable' | 'beta' | 'nightly' | 'dev';
 	n8nMetadata?: {
+		userId?: string;
 		[key: string]: string | number | undefined;
 	};
 	versionNotifications: IVersionNotificationSettings;
@@ -2111,7 +2306,12 @@ export interface IN8nUISettings {
 		logStreaming: boolean;
 		advancedExecutionFilters: boolean;
 		variables: boolean;
-		versionControl: boolean;
+		sourceControl: boolean;
+		auditLogs: boolean;
+		externalSecrets: boolean;
+		showNonProdBanner: boolean;
+		debugInEditor: boolean;
+		workflowHistory: boolean;
 	};
 	hideUsagePage: boolean;
 	license: {
@@ -2120,4 +2320,38 @@ export interface IN8nUISettings {
 	variables: {
 		limit: number;
 	};
+	expressions: {
+		evaluator: ExpressionEvaluatorType;
+	};
+	mfa: {
+		enabled: boolean;
+	};
+	banners: {
+		dismissed: string[];
+	};
+	ai: {
+		enabled: boolean;
+	};
+	workflowHistory: {
+		pruneTime: number;
+		licensePruneTime: number;
+	};
 }
+
+export interface SecretsHelpersBase {
+	update(): Promise<void>;
+	waitForInit(): Promise<void>;
+
+	getSecret(provider: string, name: string): IDataObject | undefined;
+	hasSecret(provider: string, name: string): boolean;
+	hasProvider(provider: string): boolean;
+	listProviders(): string[];
+	listSecrets(provider: string): string[];
+}
+
+export type BannerName =
+	| 'V1'
+	| 'TRIAL_OVER'
+	| 'TRIAL'
+	| 'NON_PRODUCTION_LICENSE'
+	| 'EMAIL_CONFIRMATION';

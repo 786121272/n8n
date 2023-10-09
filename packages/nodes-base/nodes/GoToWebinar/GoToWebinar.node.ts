@@ -35,8 +35,8 @@ import {
 	loadWebinarSessions,
 } from './GenericFunctions';
 
-import isEmpty from 'lodash.isempty';
-import omit from 'lodash.omit';
+import isEmpty from 'lodash/isEmpty';
+import omit from 'lodash/omit';
 
 import moment from 'moment-timezone';
 
@@ -652,6 +652,6 @@ export class GoToWebinar implements INodeType {
 			returnData.push(...executionData);
 		}
 
-		return this.prepareOutputData(returnData);
+		return [returnData];
 	}
 }

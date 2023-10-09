@@ -11,8 +11,6 @@ import type {
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 
-import { chunk, flatten } from '../../../utils/utilities';
-
 import mssql from 'mssql';
 
 import type { ITables } from './TableInterface';
@@ -27,6 +25,7 @@ import {
 	extractValues,
 	formatColumns,
 } from './GenericFunctions';
+import { chunk, flatten, getResolvables } from '@utils/utilities';
 
 export class MicrosoftSql implements INodeType {
 	description: INodeTypeDescription = {
@@ -90,9 +89,11 @@ export class MicrosoftSql implements INodeType {
 				displayName: 'Query',
 				name: 'query',
 				type: 'string',
+				noDataExpression: true,
 				typeOptions: {
 					editor: 'sqlEditor',
-					sqlDialect: 'mssql',
+					rows: 5,
+					sqlDialect: 'MSSQL',
 				},
 				displayOptions: {
 					show: {
@@ -100,7 +101,7 @@ export class MicrosoftSql implements INodeType {
 					},
 				},
 				default: '',
-				// eslint-disable-next-line n8n-nodes-base/node-param-placeholder-miscased-id
+
 				placeholder: 'SELECT id, name FROM product WHERE id < 40',
 				required: true,
 				description: 'The SQL query to execute',
@@ -132,7 +133,7 @@ export class MicrosoftSql implements INodeType {
 					},
 				},
 				default: '',
-				// eslint-disable-next-line n8n-nodes-base/node-param-placeholder-miscased-id
+
 				placeholder: 'id,name,description',
 				description:
 					'Comma-separated list of the properties which should used as columns for the new rows',
@@ -293,7 +294,11 @@ export class MicrosoftSql implements INodeType {
 				//         executeQuery
 				// ----------------------------------
 
-				const rawQuery = this.getNodeParameter('query', 0) as string;
+				let rawQuery = this.getNodeParameter('query', 0) as string;
+
+				for (const resolvable of getResolvables(rawQuery)) {
+					rawQuery = rawQuery.replace(resolvable, this.evaluateExpression(resolvable, 0) as string);
+				}
 
 				const queryResult = await pool.request().query(rawQuery);
 
@@ -401,7 +406,7 @@ export class MicrosoftSql implements INodeType {
 									.request()
 									.query(
 										`DELETE FROM ${table} WHERE "${deleteKey}" IN ${extractDeleteValues(
-											deleteValues as IDataObject[],
+											deleteValues,
 											deleteKey,
 										)};`,
 									);
@@ -443,6 +448,6 @@ export class MicrosoftSql implements INodeType {
 		);
 
 		returnItems.push(...executionData);
-		return this.prepareOutputData(returnItems);
+		return [returnItems];
 	}
 }

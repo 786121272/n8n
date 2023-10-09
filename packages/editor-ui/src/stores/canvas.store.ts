@@ -7,7 +7,7 @@ import {
 	useNodeTypesStore,
 	useUIStore,
 	useHistoryStore,
-	useVersionControlStore,
+	useSourceControlStore,
 } from '@/stores';
 import type { INodeUi, XYPosition } from '@/Interface';
 import { scaleBigger, scaleReset, scaleSmaller } from '@/utils';
@@ -18,11 +18,7 @@ import type {
 	DragStopEventParams,
 } from '@jsplumb/browser-ui';
 import { newInstance } from '@jsplumb/browser-ui';
-import { N8nPlusEndpointHandler } from '@/plugins/endpoints/N8nPlusEndpointType';
-import * as N8nPlusEndpointRenderer from '@/plugins/endpoints/N8nPlusEndpointRenderer';
-import { N8nConnector } from '@/plugins/connectors/N8nCustomConnector';
 import type { Connection } from '@jsplumb/core';
-import { EndpointFactory, Connectors } from '@jsplumb/core';
 import { MoveNodeCommand } from '@/models/history';
 import {
 	DEFAULT_PLACEHOLDER_TRIGGER_BUTTON,
@@ -43,7 +39,7 @@ export const useCanvasStore = defineStore('canvas', () => {
 	const nodeTypesStore = useNodeTypesStore();
 	const uiStore = useUIStore();
 	const historyStore = useHistoryStore();
-	const versionControlStore = useVersionControlStore();
+	const sourceControlStore = useSourceControlStore();
 
 	const jsPlumbInstanceRef = ref<BrowserJsPlumbInstance>();
 	const isDragging = ref<boolean>(false);
@@ -59,17 +55,13 @@ export const useCanvasStore = defineStore('canvas', () => {
 	const isDemo = ref<boolean>(false);
 	const nodeViewScale = ref<number>(1);
 	const canvasAddButtonPosition = ref<XYPosition>([1, 1]);
-	const readOnlyEnv = computed(() => versionControlStore.preferences.branchReadOnly);
+	const readOnlyEnv = computed(() => sourceControlStore.preferences.branchReadOnly);
 
 	watch(readOnlyEnv, (readOnly) => {
 		if (jsPlumbInstanceRef.value) {
 			jsPlumbInstanceRef.value.elementsDraggable = !readOnly;
 		}
 	});
-
-	Connectors.register(N8nConnector.type, N8nConnector);
-	N8nPlusEndpointRenderer.register();
-	EndpointFactory.registerHandler(N8nPlusEndpointHandler);
 
 	const setRecenteredCanvasAddButtonPosition = (offset?: XYPosition) => {
 		const position = getMidCanvasPosition(nodeViewScale.value, offset || [0, 0]);

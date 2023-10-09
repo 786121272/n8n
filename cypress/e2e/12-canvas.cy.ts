@@ -3,11 +3,9 @@ import {
 	MANUAL_TRIGGER_NODE_DISPLAY_NAME,
 	CODE_NODE_NAME,
 	SCHEDULE_TRIGGER_NODE_NAME,
-	SET_NODE_NAME,
+	EDIT_FIELDS_SET_NODE_NAME,
 	SWITCH_NODE_NAME,
-	IF_NODE_NAME,
 	MERGE_NODE_NAME,
-	HTTP_REQUEST_NODE_NAME,
 } from './../constants';
 import { WorkflowPage as WorkflowPageClass } from '../pages/workflow';
 
@@ -21,14 +19,9 @@ const ZOOM_OUT_X2_FACTOR = 0.64;
 const RENAME_NODE_NAME = 'Something else';
 
 describe('Canvas Node Manipulation and Navigation', () => {
-	before(() => {
-		cy.skipSetup();
-	});
-
 	beforeEach(() => {
 		WorkflowPage.actions.visit();
 	});
-
 
 	it('should add switch node and test connections', () => {
 		WorkflowPage.actions.addNodeToCanvas(SWITCH_NODE_NAME, true);
@@ -37,7 +30,7 @@ describe('Canvas Node Manipulation and Navigation', () => {
 		for (let i = 0; i < 4; i++) {
 			WorkflowPage.getters.canvasNodePlusEndpointByName(SWITCH_NODE_NAME, i).click({ force: true });
 			WorkflowPage.getters.nodeCreatorSearchBar().should('be.visible');
-			WorkflowPage.actions.addNodeToCanvas(SET_NODE_NAME, false);
+			WorkflowPage.actions.addNodeToCanvas(EDIT_FIELDS_SET_NODE_NAME, false);
 			WorkflowPage.actions.zoomToFit();
 		}
 		WorkflowPage.actions.saveWorkflowOnButtonClick();
@@ -45,7 +38,7 @@ describe('Canvas Node Manipulation and Navigation', () => {
 		cy.waitForLoad();
 		// Make sure all connections are there after reload
 		for (let i = 0; i < 4; i++) {
-			const setName = `${SET_NODE_NAME}${i > 0 ? i : ''}`;
+			const setName = `${EDIT_FIELDS_SET_NODE_NAME}${i > 0 ? i : ''}`;
 			WorkflowPage.getters
 				.canvasNodeInputEndpointByName(setName)
 				.should('have.class', 'jtk-endpoint-connected');
@@ -56,7 +49,7 @@ describe('Canvas Node Manipulation and Navigation', () => {
 		WorkflowPage.actions.addNodeToCanvas(MANUAL_TRIGGER_NODE_NAME);
 		WorkflowPage.getters.canvasNodeByName(MANUAL_TRIGGER_NODE_DISPLAY_NAME).click();
 		for (let i = 0; i < 2; i++) {
-			WorkflowPage.actions.addNodeToCanvas(SET_NODE_NAME, true);
+			WorkflowPage.actions.addNodeToCanvas(EDIT_FIELDS_SET_NODE_NAME, true);
 			WorkflowPage.getters.nodeViewBackground().click(600 + i * 100, 200, { force: true });
 		}
 		WorkflowPage.actions.zoomToFit();
@@ -67,18 +60,18 @@ describe('Canvas Node Manipulation and Navigation', () => {
 		// Connect manual to Set1
 		cy.draganddrop(
 			WorkflowPage.getters.getEndpointSelector('output', MANUAL_TRIGGER_NODE_DISPLAY_NAME),
-			WorkflowPage.getters.getEndpointSelector('input', `${SET_NODE_NAME}1`),
+			WorkflowPage.getters.getEndpointSelector('input', `${EDIT_FIELDS_SET_NODE_NAME}1`),
 		);
 
 		cy.get('.rect-input-endpoint.jtk-endpoint-connected').should('have.length', 2);
 
 		// Connect Set1 and Set2 to merge
 		cy.draganddrop(
-			WorkflowPage.getters.getEndpointSelector('plus', SET_NODE_NAME),
+			WorkflowPage.getters.getEndpointSelector('plus', EDIT_FIELDS_SET_NODE_NAME),
 			WorkflowPage.getters.getEndpointSelector('input', MERGE_NODE_NAME, 0),
 		);
 		cy.draganddrop(
-			WorkflowPage.getters.getEndpointSelector('plus', `${SET_NODE_NAME}1`),
+			WorkflowPage.getters.getEndpointSelector('plus', `${EDIT_FIELDS_SET_NODE_NAME}1`),
 			WorkflowPage.getters.getEndpointSelector('input', MERGE_NODE_NAME, 1),
 		);
 
@@ -101,7 +94,7 @@ describe('Canvas Node Manipulation and Navigation', () => {
 		WorkflowPage.actions.addNodeToCanvas(MANUAL_TRIGGER_NODE_NAME);
 		WorkflowPage.getters.canvasNodeByName(MANUAL_TRIGGER_NODE_DISPLAY_NAME).click();
 		for (let i = 0; i < 3; i++) {
-			WorkflowPage.actions.addNodeToCanvas(SET_NODE_NAME, true);
+			WorkflowPage.actions.addNodeToCanvas(CODE_NODE_NAME, true);
 		}
 		WorkflowPage.actions.zoomToFit();
 		WorkflowPage.actions.executeWorkflow();
@@ -110,7 +103,7 @@ describe('Canvas Node Manipulation and Navigation', () => {
 		cy.get('.data-count').should('have.length', 4);
 		cy.get('.plus-draggable-endpoint').should('have.class', 'ep-success');
 
-		WorkflowPage.actions.addNodeToCanvas(SET_NODE_NAME);
+		WorkflowPage.actions.addNodeToCanvas(CODE_NODE_NAME);
 		WorkflowPage.actions.zoomToFit();
 
 		cy.get('.plus-draggable-endpoint').filter(':visible').should('not.have.class', 'ep-success');
@@ -141,7 +134,7 @@ describe('Canvas Node Manipulation and Navigation', () => {
 	it('should delete node between two connected nodes', () => {
 		WorkflowPage.actions.addNodeToCanvas(SCHEDULE_TRIGGER_NODE_NAME);
 		WorkflowPage.actions.addNodeToCanvas(CODE_NODE_NAME);
-		WorkflowPage.actions.addNodeToCanvas(SET_NODE_NAME);
+		WorkflowPage.actions.addNodeToCanvas(EDIT_FIELDS_SET_NODE_NAME);
 		WorkflowPage.getters.canvasNodes().should('have.length', 3);
 		WorkflowPage.getters.nodeConnections().should('have.length', 2);
 		WorkflowPage.getters.canvasNodeByName(CODE_NODE_NAME).click();
@@ -165,11 +158,11 @@ describe('Canvas Node Manipulation and Navigation', () => {
 		WorkflowPage.getters.canvasNodeByName(MANUAL_TRIGGER_NODE_DISPLAY_NAME).click();
 		WorkflowPage.actions.addNodeToCanvas(CODE_NODE_NAME);
 		WorkflowPage.actions.zoomToFit();
-		cy.drag('[data-test-id="canvas-node"].jtk-drag-selected', [50, 150]);
+		cy.drag('[data-test-id="canvas-node"].jtk-drag-selected', [50, 150], { clickToFinish: true });
 		WorkflowPage.getters
 			.canvasNodes()
 			.last()
-			.should('have.attr', 'style', 'left: 740px; top: 360px;');
+			.should('have.attr', 'style', 'left: 740px; top: 320px;');
 	});
 
 	it('should zoom in', () => {

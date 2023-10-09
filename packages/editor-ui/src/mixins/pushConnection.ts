@@ -24,7 +24,7 @@ import { TelemetryHelpers } from 'n8n-workflow';
 
 import { WORKFLOW_SETTINGS_MODAL_KEY } from '@/constants';
 import { getTriggerNodeServiceName } from '@/utils';
-import { codeNodeEditorEventBus } from '@/event-bus';
+import { codeNodeEditorEventBus, globalLinkActionsEventBus } from '@/event-bus';
 import { mapStores } from 'pinia';
 import { useUIStore } from '@/stores/ui.store';
 import { useWorkflowsStore } from '@/stores/workflows.store';
@@ -198,7 +198,7 @@ export const pushConnection = defineComponent({
 
 			if (receivedData.type === 'sendConsoleMessage') {
 				const pushData = receivedData.data;
-				console.log(pushData.source, ...pushData.messages); // eslint-disable-line no-console
+				console.log(pushData.source, ...pushData.messages);
 				return true;
 			}
 
@@ -351,9 +351,12 @@ export const pushConnection = defineComponent({
 
 					let action;
 					if (!isSavingExecutions) {
-						this.$root.$emit('registerGlobalLinkAction', 'open-settings', async () => {
-							if (this.workflowsStore.isNewWorkflow) await this.saveAsNewWorkflow();
-							this.uiStore.openModal(WORKFLOW_SETTINGS_MODAL_KEY);
+						globalLinkActionsEventBus.emit('registerGlobalLinkAction', {
+							key: 'open-settings',
+							action: async () => {
+								if (this.workflowsStore.isNewWorkflow) await this.saveAsNewWorkflow();
+								this.uiStore.openModal(WORKFLOW_SETTINGS_MODAL_KEY);
+							},
 						});
 
 						action =
@@ -491,7 +494,7 @@ export const pushConnection = defineComponent({
 					runDataExecuted.data.resultData.runData = this.workflowsStore.getWorkflowRunData;
 				}
 
-				this.workflowsStore.executingNode = null;
+				this.workflowsStore.executingNode.length = 0;
 				this.workflowsStore.setWorkflowExecutionData(runDataExecuted as IExecutionResponse);
 				this.uiStore.removeActiveAction('workflowRunning');
 
@@ -540,10 +543,11 @@ export const pushConnection = defineComponent({
 				// A node finished to execute. Add its data
 				const pushData = receivedData.data;
 				this.workflowsStore.addNodeExecutionData(pushData);
+				this.workflowsStore.removeExecutingNode(pushData.nodeName);
 			} else if (receivedData.type === 'nodeExecuteBefore') {
 				// A node started to be executed. Set it as executing.
 				const pushData = receivedData.data;
-				this.workflowsStore.executingNode = pushData.nodeName;
+				this.workflowsStore.addExecutingNode(pushData.nodeName);
 			} else if (receivedData.type === 'testWebhookDeleted') {
 				// A test-webhook was deleted
 				const pushData = receivedData.data;

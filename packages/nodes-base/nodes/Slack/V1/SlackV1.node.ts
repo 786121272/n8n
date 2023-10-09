@@ -22,7 +22,7 @@ import { userProfileFields, userProfileOperations } from './UserProfileDescripti
 import { slackApiRequest, slackApiRequestAllItems, validateJSON } from './GenericFunctions';
 import type { IAttachment } from './MessageInterface';
 
-import { oldVersionNotice } from '../../../utils/descriptions';
+import { oldVersionNotice } from '@utils/descriptions';
 
 import moment from 'moment';
 
@@ -1380,6 +1380,6 @@ export class SlackV1 implements INodeType {
 				throw error;
 			}
 		}
-		return this.prepareOutputData(returnData);
+		return [returnData];
 	}
 }

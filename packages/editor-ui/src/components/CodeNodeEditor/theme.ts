@@ -31,9 +31,15 @@ const cssStyleDeclaration = getComputedStyle(document.documentElement);
 
 interface ThemeSettings {
 	isReadOnly?: boolean;
+	customMaxHeight?: string;
+	customMinHeight?: number;
 }
 
-export const codeNodeEditorTheme = ({ isReadOnly }: ThemeSettings) => [
+export const codeNodeEditorTheme = ({
+	isReadOnly,
+	customMaxHeight,
+	customMinHeight,
+}: ThemeSettings) => [
 	EditorView.theme({
 		'&': {
 			'font-size': BASE_STYLING.fontSize,
@@ -79,8 +85,11 @@ export const codeNodeEditorTheme = ({ isReadOnly }: ThemeSettings) => [
 		},
 		'.cm-scroller': {
 			overflow: 'auto',
-			maxHeight: '100%',
-			...(isReadOnly ? {} : { minHeight: '10em' }),
+
+			maxHeight: customMaxHeight ?? '100%',
+			...(isReadOnly
+				? {}
+				: { minHeight: customMinHeight ? `${Number(customMinHeight) * 1.3}em` : '10em' }),
 		},
 		'.cm-diagnosticAction': {
 			backgroundColor: BASE_STYLING.diagnosticButton.backgroundColor,

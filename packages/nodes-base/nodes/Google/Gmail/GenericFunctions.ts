@@ -6,7 +6,6 @@ import type {
 	IBinaryKeyData,
 	IDataObject,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	ILoadOptionsFunctions,
 	INode,
 	INodeExecutionData,
@@ -17,13 +16,14 @@ import { NodeApiError, NodeOperationError } from 'n8n-workflow';
 
 import { DateTime } from 'luxon';
 
-import isEmpty from 'lodash.isempty';
+import isEmpty from 'lodash/isEmpty';
 
 export interface IEmail {
 	from?: string;
 	to?: string;
 	cc?: string;
 	bcc?: string;
+	replyTo?: string;
 	inReplyTo?: string;
 	reference?: string;
 	subject: string;
@@ -42,7 +42,7 @@ import MailComposer from 'nodemailer/lib/mail-composer';
 import { getGoogleAccessToken } from '../GenericFunctions';
 
 export async function googleApiRequest(
-	this: IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions | IPollFunctions,
+	this: IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions,
 	method: string,
 	endpoint: string,
 	body: IDataObject = {},
@@ -222,6 +222,7 @@ export async function encodeEmail(email: IEmail) {
 		to: email.to,
 		cc: email.cc,
 		bcc: email.bcc,
+		replyTo: email.replyTo,
 		inReplyTo: email.inReplyTo,
 		references: email.reference,
 		subject: email.subject,
@@ -347,7 +348,7 @@ export const prepareTimestamp = (
 };
 
 export function prepareQuery(
-	this: IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions | IPollFunctions,
+	this: IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions,
 	fields: IDataObject,
 	itemIndex: number,
 ) {
@@ -404,7 +405,7 @@ export function prepareQuery(
 }
 
 export function prepareEmailsInput(
-	this: IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions,
+	this: IExecuteFunctions | ILoadOptionsFunctions,
 	input: string,
 	fieldName: string,
 	itemIndex: number,
@@ -432,21 +433,45 @@ export function prepareEmailsInput(
 }
 
 export function prepareEmailBody(
-	this: IExecuteFunctions | IExecuteSingleFunctions | ILoadOptionsFunctions,
+	this: IExecuteFunctions | ILoadOptionsFunctions,
 	itemIndex: number,
+	appendAttribution = false,
+	instanceId?: string,
 ) {
 	const emailType = this.getNodeParameter('emailType', itemIndex) as string;
+	let message = (this.getNodeParameter('message', itemIndex, '') as string).trim();
 
-	let body = '';
-	let htmlBody = '';
-
-	if (emailType === 'html') {
-		htmlBody = (this.getNodeParameter('message', itemIndex, '') as string).trim();
-	} else {
-		body = (this.getNodeParameter('message', itemIndex, '') as string).trim();
+	if (appendAttribution) {
+		const attributionText = 'This email was sent automatically with ';
+		const link = `https://n8n.io/?utm_source=n8n-internal&utm_medium=powered_by&utm_campaign=${encodeURIComponent(
+			'n8n-nodes-base.gmail',
+		)}${instanceId ? '_' + instanceId : ''}`;
+		if (emailType === 'html') {
+			message = `
+			${message}
+			<br>
+			<br>
+			---
+			<br>
+			<em>${attributionText}<a href="${link}" target="_blank">n8n</a></em>
+			`;
+		} else {
+			message = `${message}\n\n---\n${attributionText}n8n\n${'https://n8n.io'}`;
+		}
 	}
 
-	return { body, htmlBody };
+	const body = {
+		body: '',
+		htmlBody: '',
+	};
+
+	if (emailType === 'html') {
+		body.htmlBody = message;
+	} else {
+		body.body = message;
+	}
+
+	return body;
 }
 
 export async function prepareEmailAttachments(
@@ -509,7 +534,7 @@ export function unescapeSnippets(items: INodeExecutionData[]) {
 	return result;
 }
 
-export async function replayToEmail(
+export async function replyToEmail(
 	this: IExecuteFunctions,
 	items: INodeExecutionData[],
 	gmailId: string,

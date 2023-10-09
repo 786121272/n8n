@@ -47,7 +47,7 @@ import {
 
 import { capitalCase } from 'change-case';
 
-import isEmpty from 'lodash.isempty';
+import isEmpty from 'lodash/isEmpty';
 
 import type { QuickBooksOAuth2Credentials, TransactionFields, TransactionReport } from './types';
 
@@ -1161,9 +1161,9 @@ export class QuickBooks implements INodeType {
 			['get'].includes(operation) &&
 			download
 		) {
-			return this.prepareOutputData(responseData as INodeExecutionData[]);
+			return [responseData as INodeExecutionData[]];
 		} else {
-			return this.prepareOutputData(returnData);
+			return [returnData];
 		}
 	}
 }

@@ -28,9 +28,9 @@ import { labelFields, labelOperations } from './LabelDescription';
 
 import { draftFields, draftOperations } from './DraftDescription';
 
-import isEmpty from 'lodash.isempty';
+import isEmpty from 'lodash/isEmpty';
 
-import { oldVersionNotice } from '../../../../utils/descriptions';
+import { oldVersionNotice } from '@utils/descriptions';
 
 const versionDescription: INodeTypeDescription = {
 	displayName: 'Gmail',
@@ -834,6 +834,6 @@ export class GmailV1 implements INodeType {
 				throw error;
 			}
 		}
-		return this.prepareOutputData(returnData);
+		return [returnData];
 	}
 }

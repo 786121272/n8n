@@ -33,7 +33,7 @@ import type {
 } from './GenericFunctions';
 import { wiseApiRequest } from './GenericFunctions';
 
-import omit from 'lodash.omit';
+import omit from 'lodash/omit';
 
 import moment from 'moment-timezone';
 
@@ -544,7 +544,7 @@ export class Wise implements INodeType {
 		}
 
 		if (binaryOutput && responseData !== undefined) {
-			return this.prepareOutputData(responseData as INodeExecutionData[]);
+			return [responseData as INodeExecutionData[]];
 		}
 
 		return [this.helpers.returnJsonArray(returnData)];

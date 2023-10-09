@@ -12,6 +12,12 @@ import {
 import * as testDb from '../shared/testDb';
 import { toReportTitle } from '@/audit/utils';
 import config from '@/config';
+import { generateNanoId } from '@db/utils/generators';
+
+import { LoggerProxy } from 'n8n-workflow';
+import { getLogger } from '@/Logger';
+
+LoggerProxy.init(getLogger());
 
 beforeAll(async () => {
 	await testDb.init();
@@ -31,6 +37,7 @@ test('should report webhook lacking authentication', async () => {
 	const targetNodeId = uuid();
 
 	const details = {
+		id: generateNanoId(),
 		name: 'My Test Workflow',
 		active: true,
 		nodeTypes: {},
@@ -73,6 +80,7 @@ test('should report webhook lacking authentication', async () => {
 test('should not report webhooks having basic or header auth', async () => {
 	const promises = ['basicAuth', 'headerAuth'].map(async (authType) => {
 		const details = {
+			id: generateNanoId(),
 			name: 'My Test Workflow',
 			active: true,
 			nodeTypes: {},
@@ -115,6 +123,7 @@ test('should not report webhooks having basic or header auth', async () => {
 test('should not report webhooks validated by direct children', async () => {
 	const promises = [...WEBHOOK_VALIDATOR_NODE_TYPES].map(async (nodeType) => {
 		const details = {
+			id: generateNanoId(),
 			name: 'My Test Workflow',
 			active: true,
 			nodeTypes: {},
@@ -240,12 +249,9 @@ test('should report security settings', async () => {
 			versionNotificationsEnabled: true,
 			templatesEnabled: true,
 			publicApiEnabled: false,
-			userManagementEnabled: true,
 		},
 		auth: {
 			authExcludeEndpoints: 'none',
-			basicAuthActive: false,
-			jwtAuthActive: false,
 		},
 		nodes: { nodesExclude: 'none', nodesInclude: 'none' },
 		telemetry: { diagnosticsEnabled: true },

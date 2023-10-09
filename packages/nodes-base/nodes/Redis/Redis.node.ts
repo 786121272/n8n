@@ -12,7 +12,7 @@ import type {
 } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 
-import set from 'lodash.set';
+import set from 'lodash/set';
 import redis from 'redis';
 
 import util from 'util';
@@ -707,7 +707,7 @@ export class Redis implements INodeType {
 						const clientInfo = util.promisify(client.info).bind(client);
 						const result = await clientInfo();
 
-						resolve(this.prepareOutputData([{ json: convertInfoToObject(result as string) }]));
+						resolve([[{ json: convertInfoToObject(result as string) }]]);
 						client.quit();
 					} else if (
 						['delete', 'get', 'keys', 'set', 'incr', 'publish', 'push', 'pop'].includes(operation)
@@ -838,7 +838,7 @@ export class Redis implements INodeType {
 						}
 
 						client.quit();
-						resolve(this.prepareOutputData(returnItems));
+						resolve([returnItems]);
 					}
 				} catch (error) {
 					reject(error);

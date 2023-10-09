@@ -8,6 +8,12 @@ import {
 } from '@/audit/constants';
 import { getRiskSection, saveManualTriggerWorkflow } from './utils';
 import * as testDb from '../shared/testDb';
+import { generateNanoId } from '@db/utils/generators';
+
+import { LoggerProxy } from 'n8n-workflow';
+import { getLogger } from '@/Logger';
+
+LoggerProxy.init(getLogger());
 
 beforeAll(async () => {
 	await testDb.init();
@@ -28,6 +34,7 @@ test('should report expressions in queries', async () => {
 
 	const promises = Object.entries(map).map(async ([nodeType, nodeId]) => {
 		const details = {
+			id: generateNanoId(),
 			name: 'My Test Workflow',
 			active: false,
 			connections: {},
@@ -80,6 +87,7 @@ test('should report expressions in query params', async () => {
 
 	const promises = Object.entries(map).map(async ([nodeType, nodeId]) => {
 		const details = {
+			id: generateNanoId(),
 			name: 'My Test Workflow',
 			active: false,
 			connections: {},
@@ -134,6 +142,7 @@ test('should report unused query params', async () => {
 
 	const promises = Object.entries(map).map(async ([nodeType, nodeId]) => {
 		const details = {
+			id: generateNanoId(),
 			name: 'My Test Workflow',
 			active: false,
 			connections: {},

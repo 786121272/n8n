@@ -5,7 +5,6 @@ import type {
 	IDataObject,
 	IDisplayOptions,
 	IExecuteFunctions,
-	IExecuteSingleFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	INodeExecutionData,
@@ -44,12 +43,7 @@ const apiVersion: { [key: number]: string } = {
 };
 
 export async function notionApiRequest(
-	this:
-		| IHookFunctions
-		| IExecuteFunctions
-		| IExecuteSingleFunctions
-		| ILoadOptionsFunctions
-		| IPollFunctions,
+	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions,
 	method: string,
 	resource: string,
 
@@ -87,7 +81,6 @@ export async function notionApiRequestAllItems(
 	propertyName: string,
 	method: string,
 	endpoint: string,
-
 	body: any = {},
 	query: IDataObject = {},
 ): Promise<any> {
@@ -113,6 +106,48 @@ export async function notionApiRequestAllItems(
 	} while (responseData.has_more !== false);
 
 	return returnData;
+}
+
+export async function notionApiRequestGetBlockChildrens(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IPollFunctions,
+	blocks: IDataObject[],
+	responseData: IDataObject[] = [],
+	limit?: number,
+) {
+	if (blocks.length === 0) return responseData;
+
+	for (const block of blocks) {
+		responseData.push(block);
+
+		if (block.type === 'child_page') continue;
+
+		if (block.has_children) {
+			let childrens = await notionApiRequestAllItems.call(
+				this,
+				'results',
+				'GET',
+				`/blocks/${block.id}/children`,
+			);
+
+			childrens = (childrens || []).map((entry: IDataObject) => ({
+				object: entry.object,
+				parent_id: block.id,
+				...entry,
+			}));
+
+			await notionApiRequestGetBlockChildrens.call(this, childrens, responseData);
+		}
+
+		if (limit && responseData.length === limit) {
+			return responseData;
+		}
+
+		if (limit && responseData.length > limit) {
+			return responseData.slice(0, limit);
+		}
+	}
+
+	return responseData;
 }
 
 export function getBlockTypes() {
@@ -880,7 +915,7 @@ export function getSearchFilters(resource: string) {
 			],
 			displayOptions: {
 				show: {
-					version: [2],
+					'@version': [2],
 					resource: [resource],
 					operation: ['getAll'],
 				},
@@ -903,7 +938,7 @@ export function getSearchFilters(resource: string) {
 			],
 			displayOptions: {
 				show: {
-					version: [2],
+					'@version': [2],
 					resource: [resource],
 					operation: ['getAll'],
 					filterType: ['manual'],
@@ -920,7 +955,7 @@ export function getSearchFilters(resource: string) {
 			},
 			displayOptions: {
 				show: {
-					version: [2],
+					'@version': [2],
 					resource: [resource],
 					operation: ['getAll'],
 					filterType: ['manual'],
@@ -943,7 +978,7 @@ export function getSearchFilters(resource: string) {
 			type: 'notice',
 			displayOptions: {
 				show: {
-					version: [2],
+					'@version': [2],
 					resource: [resource],
 					operation: ['getAll'],
 					filterType: ['json'],
@@ -957,7 +992,7 @@ export function getSearchFilters(resource: string) {
 			type: 'string',
 			displayOptions: {
 				show: {
-					version: [2],
+					'@version': [2],
 					resource: [resource],
 					operation: ['getAll'],
 					filterType: ['json'],

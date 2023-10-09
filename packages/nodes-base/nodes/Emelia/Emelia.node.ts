@@ -13,7 +13,7 @@ import { campaignFields, campaignOperations } from './CampaignDescription';
 
 import { contactListFields, contactListOperations } from './ContactListDescription';
 
-import isEmpty from 'lodash.isempty';
+import isEmpty from 'lodash/isEmpty';
 
 export class Emelia implements INodeType {
 	description: INodeTypeDescription = {
@@ -441,6 +441,6 @@ export class Emelia implements INodeType {
 				throw error;
 			}
 		}
-		return this.prepareOutputData(returnData);
+		return [returnData];
 	}
 }
