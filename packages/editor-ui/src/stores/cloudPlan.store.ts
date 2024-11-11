@@ -1,15 +1,17 @@
 import { computed, reactive } from 'vue';
 import { defineStore } from 'pinia';
 import type { CloudPlanState } from '@/Interface';
-import { useRootStore } from '@/stores/n8nRoot.store';
+import { useRootStore } from '@/stores/root.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useUIStore } from '@/stores/ui.store';
 import { useUsersStore } from '@/stores/users.store';
 import { getAdminPanelLoginCode, getCurrentPlan, getCurrentUsage } from '@/api/cloudPlans';
 import { DateTime } from 'luxon';
 import { CLOUD_TRIAL_CHECK_INTERVAL, STORES } from '@/constants';
+import { hasPermission } from '@/utils/rbac/permissions';
 
 const DEFAULT_STATE: CloudPlanState = {
+	initialized: false,
 	data: null,
 	usage: null,
 	loadingPlan: false,
@@ -21,14 +23,6 @@ export const useCloudPlanStore = defineStore(STORES.CLOUD_PLAN, () => {
 	const usersStore = useUsersStore();
 
 	const state = reactive<CloudPlanState>(DEFAULT_STATE);
-
-	const setData = (data: CloudPlanState['data']) => {
-		state.data = data;
-	};
-
-	const setUsage = (data: CloudPlanState['usage']) => {
-		state.usage = data;
-	};
 
 	const reset = () => {
 		state.data = null;
@@ -54,25 +48,23 @@ export const useCloudPlanStore = defineStore(STORES.CLOUD_PLAN, () => {
 
 	const hasCloudPlan = computed(() => {
 		const cloudUserId = settingsStore.settings.n8nMetadata?.userId;
-		return usersStore.currentUser?.isOwner && settingsStore.isCloudDeployment && cloudUserId;
+		return hasPermission(['instanceOwner']) && settingsStore.isCloudDeployment && cloudUserId;
 	});
 
 	const getUserCloudAccount = async () => {
 		if (!hasCloudPlan.value) throw new Error('User does not have a cloud plan');
 		try {
-			if (useUsersStore().isInstanceOwner) {
-				await usersStore.fetchUserCloudAccount();
-				if (!usersStore.currentUserCloudInfo?.confirmed && !userIsTrialing.value) {
-					useUIStore().pushBannerToStack('EMAIL_CONFIRMATION');
-				}
+			await usersStore.fetchUserCloudAccount();
+			if (!usersStore.currentUserCloudInfo?.confirmed && !userIsTrialing.value) {
+				useUIStore().pushBannerToStack('EMAIL_CONFIRMATION');
 			}
 		} catch (error) {
-			throw new Error(error);
+			throw new Error(error.message);
 		}
 	};
 
 	const getAutoLoginCode = async (): Promise<{ code: string }> => {
-		return getAdminPanelLoginCode(rootStore.getRestApiContext);
+		return await getAdminPanelLoginCode(rootStore.restApiContext);
 	};
 
 	const getOwnerCurrentPlan = async () => {
@@ -80,7 +72,7 @@ export const useCloudPlanStore = defineStore(STORES.CLOUD_PLAN, () => {
 		state.loadingPlan = true;
 		let plan;
 		try {
-			plan = await getCurrentPlan(rootStore.getRestApiContext);
+			plan = await getCurrentPlan(rootStore.restApiContext);
 			state.data = plan;
 			state.loadingPlan = false;
 
@@ -100,7 +92,7 @@ export const useCloudPlanStore = defineStore(STORES.CLOUD_PLAN, () => {
 	};
 
 	const getInstanceCurrentUsage = async () => {
-		const usage = await getCurrentUsage({ baseUrl: rootStore.getBaseUrl, sessionId: '' });
+		const usage = await getCurrentUsage({ baseUrl: rootStore.baseUrl, pushRef: '' });
 		state.usage = usage;
 		return usage;
 	};
@@ -142,19 +134,55 @@ export const useCloudPlanStore = defineStore(STORES.CLOUD_PLAN, () => {
 			if (!userIsTrialing.value) return;
 			await getInstanceCurrentUsage();
 			startPollingInstanceUsageData();
-		} catch {}
+		} catch (e) {
+			throw new Error(e.message);
+		}
 	};
 
 	const fetchUserCloudAccount = async () => {
 		try {
 			await getUserCloudAccount();
-		} catch {}
+		} catch (e) {
+			throw new Error(e.message);
+		}
+	};
+
+	const initialize = async () => {
+		if (state.initialized) {
+			return;
+		}
+
+		try {
+			await checkForCloudPlanData();
+		} catch (error) {
+			console.warn('Error checking for cloud plan data:', error);
+		}
+
+		try {
+			await fetchUserCloudAccount();
+		} catch (error) {
+			console.warn('Error fetching user cloud account:', error);
+		}
+
+		state.initialized = true;
+	};
+
+	const generateCloudDashboardAutoLoginLink = async (data: {
+		redirectionPath: string;
+	}) => {
+		const searchParams = new URLSearchParams();
+
+		const adminPanelHost = new URL(window.location.href).host.split('.').slice(1).join('.');
+		const { code } = await getAutoLoginCode();
+		const linkUrl = `https://${adminPanelHost}/login`;
+		searchParams.set('code', code);
+		searchParams.set('returnPath', data.redirectionPath);
+
+		return `${linkUrl}?${searchParams.toString()}`;
 	};
 
 	return {
 		state,
-		getOwnerCurrentPlan,
-		getInstanceCurrentUsage,
 		usageLeft,
 		trialDaysLeft,
 		userIsTrialing,
@@ -162,6 +190,10 @@ export const useCloudPlanStore = defineStore(STORES.CLOUD_PLAN, () => {
 		currentUsageData,
 		trialExpired,
 		allExecutionsUsed,
+		generateCloudDashboardAutoLoginLink,
+		initialize,
+		getOwnerCurrentPlan,
+		getInstanceCurrentUsage,
 		reset,
 		checkForCloudPlanData,
 		fetchUserCloudAccount,

@@ -1,8 +1,8 @@
 import axios from 'axios';
-import { ObjectStoreService } from '@/ObjectStore/ObjectStore.service.ee';
 import { Readable } from 'stream';
+
+import { ObjectStoreService } from '@/ObjectStore/ObjectStore.service.ee';
 import { writeBlockedMessage } from '@/ObjectStore/utils';
-import { initLogger } from './helpers/utils';
 
 jest.mock('axios');
 
@@ -23,7 +23,6 @@ const toDeletionXml = (filename: string) => `<Delete>
 </Delete>`;
 
 let objectStoreService: ObjectStoreService;
-initLogger();
 
 beforeEach(async () => {
 	objectStoreService = new ObjectStoreService();
@@ -117,7 +116,6 @@ describe('put()', () => {
 	});
 
 	it('should block if read-only', async () => {
-		initLogger();
 		objectStoreService.setReadonly(true);
 
 		const metadata = { fileName: 'file.txt', mimeType: 'text/plain' };

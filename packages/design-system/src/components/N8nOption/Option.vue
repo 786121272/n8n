@@ -1,17 +1,12 @@
-<script lang="ts">
+<script setup lang="ts">
 import { ElOption } from 'element-plus';
-import { defineComponent } from 'vue';
 
-export default defineComponent({
-	props: {
-		...ElOption.props,
-	},
-	components: {
-		ElOption,
-	},
+const props = defineProps({
+	...ElOption.props,
+	value: { type: [String, Number], required: true },
 });
 </script>
 
 <template>
-	<el-option v-bind="{ ...$props, ...$attrs }"><slot /></el-option>
+	<ElOption v-bind="{ ...$props, ...$attrs }" :value="props.value"><slot /></ElOption>
 </template>

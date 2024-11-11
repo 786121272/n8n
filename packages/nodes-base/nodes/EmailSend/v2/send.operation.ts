@@ -1,6 +1,9 @@
 import type {
+	ICredentialsDecrypted,
+	ICredentialTestFunctions,
 	IDataObject,
 	IExecuteFunctions,
+	INodeCredentialTestResult,
 	INodeExecutionData,
 	INodeProperties,
 	JsonObject,
@@ -11,6 +14,7 @@ import { createTransport } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
 import { updateDisplayOptions } from '@utils/utilities';
+import { appendAttributionOption } from '../../../utils/descriptions';
 
 const properties: INodeProperties[] = [
 	// TODO: Add choice for text as text or html  (maybe also from name)
@@ -51,14 +55,17 @@ const properties: INodeProperties[] = [
 			{
 				name: 'Text',
 				value: 'text',
+				description: 'Send email as plain text',
 			},
 			{
 				name: 'HTML',
 				value: 'html',
+				description: 'Send email as HTML',
 			},
 			{
 				name: 'Both',
 				value: 'both',
+				description: "Send both formats, recipient's client selects version to display",
 			},
 		],
 		default: 'html',
@@ -127,15 +134,11 @@ const properties: INodeProperties[] = [
 		displayName: 'Options',
 		name: 'options',
 		type: 'collection',
-		placeholder: 'Add Option',
+		placeholder: 'Add option',
 		default: {},
 		options: [
 			{
-				// eslint-disable-next-line n8n-nodes-base/node-param-display-name-miscased
-				displayName: 'Append n8n Attribution',
-				name: 'appendAttribution',
-				type: 'boolean',
-				default: true,
+				...appendAttributionOption,
 				description:
 					'Whether to include the phrase “This email was sent automatically with n8n” to the end of the email',
 			},
@@ -207,6 +210,14 @@ function configureTransport(credentials: IDataObject, options: EmailSendOptions)
 		secure: credentials.secure as boolean,
 	};
 
+	if (credentials.secure === false) {
+		connectionOptions.ignoreTLS = credentials.disableStartTls as boolean;
+	}
+
+	if (typeof credentials.hostName === 'string' && credentials.hostName) {
+		connectionOptions.name = credentials.hostName;
+	}
+
 	if (credentials.user || credentials.password) {
 		connectionOptions.auth = {
 			user: credentials.user as string,
@@ -223,10 +234,32 @@ function configureTransport(credentials: IDataObject, options: EmailSendOptions)
 	return createTransport(connectionOptions);
 }
 
+export async function smtpConnectionTest(
+	this: ICredentialTestFunctions,
+	credential: ICredentialsDecrypted,
+): Promise<INodeCredentialTestResult> {
+	const credentials = credential.data!;
+	const transporter = configureTransport(credentials, {});
+	try {
+		await transporter.verify();
+		return {
+			status: 'OK',
+			message: 'Connection successful!',
+		};
+	} catch (error) {
+		return {
+			status: 'Error',
+			message: error.message,
+		};
+	} finally {
+		transporter.close();
+	}
+}
+
 export async function execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 	const items = this.getInputData();
 	const nodeVersion = this.getNode().typeVersion;
-	const instanceId = await this.getInstanceId();
+	const instanceId = this.getInstanceId();
 
 	const returnData: INodeExecutionData[] = [];
 	let item: INodeExecutionData;
@@ -282,9 +315,7 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
 					<em>${attributionText}<a href="${link}" target="_blank">n8n</a></em>
 					`;
 				} else {
-					mailOptions.text = `${
-						mailOptions.text
-					}\n\n---\n${attributionText}n8n\n${'https://n8n.io'}`;
+					mailOptions.text = `${mailOptions.text}\n\n---\n${attributionText}n8n\n${'https://n8n.io'}`;
 				}
 			}
 

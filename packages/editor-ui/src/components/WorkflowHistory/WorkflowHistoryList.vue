@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import type { UserAction } from 'n8n-design-system';
-import { useI18n } from '@/composables';
+import { useI18n } from '@/composables/useI18n';
 import type {
 	WorkflowHistory,
 	WorkflowVersionId,
@@ -13,7 +13,7 @@ import WorkflowHistoryListItem from '@/components/WorkflowHistory/WorkflowHistor
 const props = defineProps<{
 	items: WorkflowHistory[];
 	activeItem: WorkflowHistory | null;
-	actionTypes: WorkflowHistoryActionTypes;
+	actions: UserAction[];
 	requestNumberOfItems: number;
 	lastReceivedItemsLength: number;
 	evaluatedPruneTime: number;
@@ -22,13 +22,16 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-	(
-		event: 'action',
-		value: { action: WorkflowHistoryActionTypes[number]; id: WorkflowVersionId },
-	): void;
-	(event: 'preview', value: { event: MouseEvent; id: WorkflowVersionId }): void;
-	(event: 'loadMore', value: WorkflowHistoryRequestParams): void;
-	(event: 'upgrade'): void;
+	action: [
+		value: {
+			action: WorkflowHistoryActionTypes[number];
+			id: WorkflowVersionId;
+			data: { formattedCreatedAt: string };
+		},
+	];
+	preview: [value: { event: MouseEvent; id: WorkflowVersionId }];
+	loadMore: [value: WorkflowHistoryRequestParams];
+	upgrade: [];
 }>();
 
 const i18n = useI18n();
@@ -37,13 +40,8 @@ const listElement = ref<Element | null>(null);
 const shouldAutoScroll = ref(true);
 const observer = ref<IntersectionObserver | null>(null);
 
-const actions = computed<UserAction[]>(() =>
-	props.actionTypes.map((value) => ({
-		label: i18n.baseText(`workflowHistory.item.actions.${value}`),
-		disabled: false,
-		value,
-	})),
-);
+const getActions = (index: number) =>
+	index === 0 ? props.actions.filter((action) => action.value !== 'restore') : props.actions;
 
 const observeElement = (element: Element) => {
 	observer.value = new IntersectionObserver(
@@ -67,12 +65,14 @@ const observeElement = (element: Element) => {
 const onAction = ({
 	action,
 	id,
+	data,
 }: {
 	action: WorkflowHistoryActionTypes[number];
 	id: WorkflowVersionId;
+	data: { formattedCreatedAt: string };
 }) => {
 	shouldAutoScroll.value = false;
-	emit('action', { action, id });
+	emit('action', { action, id, data });
 };
 
 const onPreview = ({ event, id }: { event: MouseEvent; id: WorkflowVersionId }) => {
@@ -104,14 +104,14 @@ const onItemMounted = ({
 </script>
 
 <template>
-	<ul :class="$style.list" ref="listElement" data-test-id="workflow-history-list">
-		<workflow-history-list-item
+	<ul ref="listElement" :class="$style.list" data-test-id="workflow-history-list">
+		<WorkflowHistoryListItem
 			v-for="(item, index) in props.items"
 			:key="item.versionId"
 			:index="index"
 			:item="item"
 			:is-active="item.versionId === props.activeItem?.versionId"
-			:actions="actions"
+			:actions="getActions(index)"
 			@action="onAction"
 			@preview="onPreview"
 			@mounted="onItemMounted"
@@ -137,7 +137,7 @@ const onItemMounted = ({
 			<span>
 				{{
 					i18n.baseText('workflowHistory.limit', {
-						interpolate: { evaluatedPruneTime: props.evaluatedPruneTime },
+						interpolate: { evaluatedPruneTime: String(props.evaluatedPruneTime) },
 					})
 				}}
 			</span>

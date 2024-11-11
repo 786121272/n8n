@@ -16,8 +16,8 @@ import {
 	microsoftApiRequestAllItems,
 } from '../../transport';
 
-import { updateDisplayOptions } from '@utils/utilities';
 import { folderRLC, returnAllOrLimit } from '../../descriptions';
+import { updateDisplayOptions } from '@utils/utilities';
 
 export const properties: INodeProperties[] = [
 	folderRLC,
@@ -191,7 +191,7 @@ export const properties: INodeProperties[] = [
 		displayName: 'Options',
 		name: 'options',
 		type: 'collection',
-		placeholder: 'Add Option',
+		placeholder: 'Add option',
 		default: {},
 		options: [
 			{

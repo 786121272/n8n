@@ -4,9 +4,9 @@ import type {
 	INodeExecutionData,
 	INodeProperties,
 } from 'n8n-workflow';
-import { updateDisplayOptions, wrapData } from '@utils/utilities';
 import { theHiveApiRequest } from '../../transport';
 import { caseRLC, pageRLC } from '../../descriptions';
+import { updateDisplayOptions, wrapData } from '@utils/utilities';
 
 const properties: INodeProperties[] = [
 	{
@@ -48,7 +48,7 @@ const properties: INodeProperties[] = [
 		displayName: 'Options',
 		name: 'options',
 		type: 'collection',
-		placeholder: 'Add Option',
+		placeholder: 'Add option',
 		default: {},
 		options: [
 			{

@@ -7,8 +7,9 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 	JsonObject,
+	IHttpRequestMethods,
 } from 'n8n-workflow';
-import { NodeApiError, NodeOperationError } from 'n8n-workflow';
+import { NodeApiError, NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 
 import { accountFields, accountOperations } from './AccountDescription';
 
@@ -71,8 +72,8 @@ export class Salesforce implements INodeType {
 		defaults: {
 			name: 'Salesforce',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionType.Main],
 		credentials: [
 			{
 				name: 'salesforceOAuth2Api',
@@ -1169,7 +1170,7 @@ export class Salesforce implements INodeType {
 							}
 						}
 						let endpoint = '/sobjects/lead';
-						let method = 'POST';
+						let method: IHttpRequestMethods = 'POST';
 						if (operation === 'upsert') {
 							method = 'PATCH';
 							const externalId = this.getNodeParameter('externalId', 0) as string;
@@ -1497,7 +1498,7 @@ export class Salesforce implements INodeType {
 							}
 						}
 						let endpoint = '/sobjects/contact';
-						let method = 'POST';
+						let method: IHttpRequestMethods = 'POST';
 						if (operation === 'upsert') {
 							method = 'PATCH';
 							const externalId = this.getNodeParameter('externalId', 0) as string;
@@ -1749,7 +1750,7 @@ export class Salesforce implements INodeType {
 							body.RecordTypeId = additionalFields.recordTypeId as string;
 						}
 						let endpoint = `/sobjects/${customObject}`;
-						let method = 'POST';
+						let method: IHttpRequestMethods = 'POST';
 						if (operation === 'upsert') {
 							method = 'PATCH';
 							const externalId = this.getNodeParameter('externalId', 0) as string;
@@ -1944,7 +1945,7 @@ export class Salesforce implements INodeType {
 							}
 						}
 						let endpoint = '/sobjects/opportunity';
-						let method = 'POST';
+						let method: IHttpRequestMethods = 'POST';
 						if (operation === 'upsert') {
 							method = 'PATCH';
 							const externalId = this.getNodeParameter('externalId', 0) as string;
@@ -2193,7 +2194,7 @@ export class Salesforce implements INodeType {
 							}
 						}
 						let endpoint = '/sobjects/account';
-						let method = 'POST';
+						let method: IHttpRequestMethods = 'POST';
 						if (operation === 'upsert') {
 							method = 'PATCH';
 							const externalId = this.getNodeParameter('externalId', 0) as string;
@@ -2854,7 +2855,7 @@ export class Salesforce implements INodeType {
 							Name: name,
 							ParentId: parentId,
 						};
-						if (items[i].binary && items[i].binary![binaryPropertyName]) {
+						if (items[i].binary?.[binaryPropertyName]) {
 							body.Body = items[i].binary![binaryPropertyName].data;
 							body.ContentType = items[i].binary![binaryPropertyName].mimeType;
 						} else {
@@ -2887,7 +2888,7 @@ export class Salesforce implements INodeType {
 						const body: IAttachment = {};
 						if (updateFields.binaryPropertyName !== undefined) {
 							const binaryPropertyName = updateFields.binaryPropertyName as string;
-							if (items[i].binary && items[i].binary![binaryPropertyName]) {
+							if (items[i].binary?.[binaryPropertyName]) {
 								body.Body = items[i].binary![binaryPropertyName].data;
 								body.ContentType = items[i].binary![binaryPropertyName].mimeType;
 							} else {

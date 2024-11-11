@@ -139,10 +139,12 @@ function fuzzyMatchRecursive(
 	if (matched) {
 		outScore = 100;
 
-		// Apply leading letter penalty
-		let penalty = LEADING_LETTER_PENALTY * matches[0];
-		penalty = penalty < MAX_LEADING_LETTER_PENALTY ? MAX_LEADING_LETTER_PENALTY : penalty;
-		outScore += penalty;
+		// Apply leading letter penalty (if not n8n-prefixed)
+		if (!target.toLowerCase().startsWith('n8n')) {
+			let penalty = LEADING_LETTER_PENALTY * matches[0];
+			penalty = penalty < MAX_LEADING_LETTER_PENALTY ? MAX_LEADING_LETTER_PENALTY : penalty;
+			outScore += penalty;
+		}
 
 		//Apply unmatched penalty
 		const unmatched = target.length - nextMatch;
@@ -203,10 +205,11 @@ function getValue<T extends object>(obj: T, prop: string): unknown {
 
 	const segments = prop.split('.');
 
-	let result: any = obj;
+	let result = obj;
 	let i = 0;
 	while (result && i < segments.length) {
-		result = result[segments[i]];
+		const key = segments[i] as keyof T;
+		result = result[key] as T;
 		i++;
 	}
 	return result;
@@ -272,3 +275,16 @@ export function sublimeSearch<T extends object>(
 
 	return results;
 }
+
+export const sortByProperty = <T>(
+	property: keyof T,
+	arr: T[],
+	order: 'asc' | 'desc' = 'asc',
+): T[] =>
+	arr.sort((a, b) => {
+		const result = String(a[property]).localeCompare(String(b[property]), undefined, {
+			numeric: true,
+			sensitivity: 'base',
+		});
+		return order === 'asc' ? result : -result;
+	});

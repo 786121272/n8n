@@ -9,7 +9,9 @@ import type {
 	INodeTypeDescription,
 	JsonObject,
 } from 'n8n-workflow';
+import { NodeConnectionType } from 'n8n-workflow';
 
+import ISO6391 from 'iso-639-1';
 import { directMessageFields, directMessageOperations } from './DirectMessageDescription';
 
 import { tweetFields, tweetOperations } from './TweetDescription';
@@ -21,8 +23,6 @@ import {
 } from './GenericFunctions';
 
 import type { ITweet, ITweetCreate } from './TweetInterface';
-
-import ISO6391 from 'iso-639-1';
 
 export class TwitterV1 implements INodeType {
 	description: INodeTypeDescription;
@@ -36,8 +36,8 @@ export class TwitterV1 implements INodeType {
 			defaults: {
 				name: 'Twitter',
 			},
-			inputs: ['main'],
-			outputs: ['main'],
+			inputs: [NodeConnectionType.Main],
+			outputs: [NodeConnectionType.Main],
 			credentials: [
 				{
 					name: 'twitterOAuth1Api',

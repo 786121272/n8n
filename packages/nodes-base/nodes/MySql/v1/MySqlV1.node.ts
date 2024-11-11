@@ -1,4 +1,3 @@
-/* eslint-disable n8n-nodes-base/node-filename-against-convention */
 import type {
 	ICredentialDataDecryptedObject,
 	ICredentialsDecrypted,
@@ -11,13 +10,14 @@ import type {
 	INodeTypeBaseDescription,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 
 import type mysql2 from 'mysql2/promise';
 
 import { createConnection, searchTables } from './GenericFunctions';
 
 import { oldVersionNotice } from '@utils/descriptions';
+import { getResolvables } from '@utils/utilities';
 
 const versionDescription: INodeTypeDescription = {
 	displayName: 'MySQL',
@@ -29,8 +29,8 @@ const versionDescription: INodeTypeDescription = {
 	defaults: {
 		name: 'MySQL',
 	},
-	inputs: ['main'],
-	outputs: ['main'],
+	inputs: [NodeConnectionType.Main],
+	outputs: [NodeConnectionType.Main],
 	credentials: [
 		{
 			name: 'mySql',
@@ -78,7 +78,6 @@ const versionDescription: INodeTypeDescription = {
 			noDataExpression: true,
 			typeOptions: {
 				editor: 'sqlEditor',
-				rows: 5,
 				sqlDialect: 'MySQL',
 			},
 			displayOptions: {
@@ -306,10 +305,17 @@ export class MySqlV1 implements INodeType {
 			// ----------------------------------
 
 			try {
-				const queryQueue = items.map(async (item, index) => {
-					const rawQuery = this.getNodeParameter('query', index) as string;
+				const queryQueue = items.map(async (_, index) => {
+					let rawQuery = (this.getNodeParameter('query', index) as string).trim();
 
-					return connection.query(rawQuery);
+					for (const resolvable of getResolvables(rawQuery)) {
+						rawQuery = rawQuery.replace(
+							resolvable,
+							this.evaluateExpression(resolvable, index) as string,
+						);
+					}
+
+					return await connection.query(rawQuery);
 				});
 
 				returnItems = ((await Promise.all(queryQueue)) as mysql2.OkPacket[][]).reduce(
@@ -321,7 +327,7 @@ export class MySqlV1 implements INodeType {
 							{ itemData: { item: index } },
 						);
 
-						collection.push(...executionData);
+						collection = collection.concat(executionData);
 
 						return collection;
 					},
@@ -391,8 +397,9 @@ export class MySqlV1 implements INodeType {
 				const updateSQL = `UPDATE ${table} SET ${columns
 					.map((column) => `${column} = ?`)
 					.join(',')} WHERE ${updateKey} = ?;`;
-				const queryQueue = updateItems.map(async (item) =>
-					connection.query(updateSQL, Object.values(item).concat(item[updateKey])),
+				const queryQueue = updateItems.map(
+					async (item) =>
+						await connection.query(updateSQL, Object.values(item).concat(item[updateKey])),
 				);
 				const queryResult = await Promise.all(queryQueue);
 				returnItems = this.helpers.returnJsonArray(

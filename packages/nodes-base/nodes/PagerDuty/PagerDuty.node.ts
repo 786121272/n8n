@@ -7,7 +7,10 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
+import { NodeConnectionType } from 'n8n-workflow';
 
+import { snakeCase } from 'change-case';
+import moment from 'moment-timezone';
 import {
 	keysToSnakeCase,
 	pagerDutyApiRequest,
@@ -24,10 +27,6 @@ import { userFields, userOperations } from './UserDescription';
 
 import type { IIncident } from './IncidentInterface';
 
-import { snakeCase } from 'change-case';
-
-import moment from 'moment-timezone';
-
 export class PagerDuty implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'PagerDuty',
@@ -40,8 +39,8 @@ export class PagerDuty implements INodeType {
 		defaults: {
 			name: 'PagerDuty',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionType.Main],
 		credentials: [
 			{
 				name: 'pagerDutyApi',

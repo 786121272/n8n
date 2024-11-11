@@ -1,9 +1,10 @@
 import type { INodeProperties } from 'n8n-workflow';
+import { includeInputFields } from './common.descriptions';
 
 export const CurrentDateDescription: INodeProperties[] = [
 	{
 		displayName:
-			'You can also refer to the current date in n8n expressions by using <code>{{$now}}</code> or <code>{{$today}}</code>. <a target="_blank" href="https://docs.n8n.io/code-examples/expressions/luxon/">More info</a>',
+			'You can also refer to the current date in n8n expressions by using <code>{{$now}}</code> or <code>{{$today}}</code>. <a target="_blank" href="https://docs.n8n.io/code/expressions/luxon/">More info</a>',
 		name: 'notice',
 		type: 'notice',
 		default: '',
@@ -42,7 +43,7 @@ export const CurrentDateDescription: INodeProperties[] = [
 		displayName: 'Options',
 		name: 'options',
 		type: 'collection',
-		placeholder: 'Add Option',
+		placeholder: 'Add option',
 		displayOptions: {
 			show: {
 				operation: ['getCurrentDate'],
@@ -50,6 +51,7 @@ export const CurrentDateDescription: INodeProperties[] = [
 		},
 		default: {},
 		options: [
+			includeInputFields,
 			{
 				displayName: 'Timezone',
 				name: 'timezone',

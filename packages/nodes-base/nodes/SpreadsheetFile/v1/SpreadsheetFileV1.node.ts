@@ -1,4 +1,3 @@
-/* eslint-disable n8n-nodes-base/node-filename-against-convention */
 import type {
 	IDataObject,
 	IExecuteFunctions,
@@ -7,7 +6,7 @@ import type {
 	INodeTypeBaseDescription,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { BINARY_ENCODING, NodeOperationError } from 'n8n-workflow';
+import { BINARY_ENCODING, NodeConnectionType, NodeOperationError } from 'n8n-workflow';
 
 import type {
 	JSON2SheetOpts,
@@ -24,12 +23,13 @@ import {
 } from 'xlsx';
 
 import {
-	operationProperties,
-	fromFileProperties,
+	operationProperty,
+	binaryProperty,
 	toFileProperties,
-	optionsProperties,
+	fromFileOptions,
+	toFileOptions,
 } from '../description';
-import { flattenObject } from '@utils/utilities';
+import { flattenObject, generatePairedItemData } from '@utils/utilities';
 import { oldVersionNotice } from '@utils/descriptions';
 
 export class SpreadsheetFileV1 implements INodeType {
@@ -43,20 +43,22 @@ export class SpreadsheetFileV1 implements INodeType {
 				name: 'Spreadsheet File',
 				color: '#2244FF',
 			},
-			inputs: ['main'],
-			outputs: ['main'],
+			inputs: [NodeConnectionType.Main],
+			outputs: [NodeConnectionType.Main],
 			properties: [
 				oldVersionNotice,
-				...operationProperties,
-				...fromFileProperties,
+				operationProperty,
+				binaryProperty,
 				...toFileProperties,
-				...optionsProperties,
+				fromFileOptions,
+				toFileOptions,
 			],
 		};
 	}
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
+		const pairedItem = generatePairedItemData(items.length);
 
 		const operation = this.getNodeParameter('operation', 0);
 
@@ -77,6 +79,7 @@ export class SpreadsheetFileV1 implements INodeType {
 
 					if (binaryData.id) {
 						const binaryPath = this.helpers.getBinaryPath(binaryData.id);
+						xlsxOptions.codepage = 65001; // utf8 codepage
 						workbook = xlsxReadFile(binaryPath, xlsxOptions);
 					} else {
 						const binaryDataBuffer = Buffer.from(binaryData.data, BINARY_ENCODING);
@@ -227,9 +230,7 @@ export class SpreadsheetFileV1 implements INodeType {
 				const newItem: INodeExecutionData = {
 					json: {},
 					binary: {},
-					pairedItem: {
-						item: 0,
-					},
+					pairedItem,
 				};
 
 				let fileName = `spreadsheet.${fileFormat}`;
@@ -246,9 +247,7 @@ export class SpreadsheetFileV1 implements INodeType {
 						json: {
 							error: error.message,
 						},
-						pairedItem: {
-							item: 0,
-						},
+						pairedItem,
 					});
 				} else {
 					throw error;

@@ -1,4 +1,3 @@
-/* eslint-disable n8n-nodes-base/node-filename-against-convention */
 import type {
 	IExecuteFunctions,
 	INodeExecutionData,
@@ -6,10 +5,10 @@ import type {
 	INodeTypeBaseDescription,
 	INodeTypeDescription,
 } from 'n8n-workflow';
+import { NodeConnectionType } from 'n8n-workflow';
 
 import * as send from './send.operation';
 
-// eslint-disable-next-line n8n-nodes-base/node-class-description-missing-subtitle
 const versionDescription: INodeTypeDescription = {
 	displayName: 'Send Email',
 	name: 'emailSend',
@@ -21,12 +20,14 @@ const versionDescription: INodeTypeDescription = {
 		name: 'Send Email',
 		color: '#00bb88',
 	},
-	inputs: ['main'],
-	outputs: ['main'],
+	inputs: [NodeConnectionType.Main],
+	outputs: [NodeConnectionType.Main],
+	usableAsTool: true,
 	credentials: [
 		{
 			name: 'smtp',
 			required: true,
+			testedBy: 'smtpConnectionTest',
 		},
 	],
 	properties: [
@@ -70,6 +71,10 @@ export class EmailSendV2 implements INodeType {
 			...versionDescription,
 		};
 	}
+
+	methods = {
+		credentialTest: { smtpConnectionTest: send.smtpConnectionTest },
+	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		let returnData: INodeExecutionData[][] = [];

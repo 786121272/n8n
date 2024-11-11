@@ -8,8 +8,9 @@ import type {
 	INodeTypeDescription,
 	JsonObject,
 } from 'n8n-workflow';
-import { NodeApiError, NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionType, NodeApiError, NodeOperationError } from 'n8n-workflow';
 
+import { snakeCase } from 'change-case';
 import { mauticApiRequest, mauticApiRequestAllItems, validateJSON } from './GenericFunctions';
 
 import { contactFields, contactOperations } from './ContactDescription';
@@ -24,8 +25,6 @@ import { contactSegmentFields, contactSegmentOperations } from './ContactSegment
 
 import { campaignContactFields, campaignContactOperations } from './CampaignContactDescription';
 
-import { snakeCase } from 'change-case';
-
 export class Mautic implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'Mautic',
@@ -38,8 +37,8 @@ export class Mautic implements INodeType {
 		defaults: {
 			name: 'Mautic',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionType.Main],
 		credentials: [
 			{
 				name: 'mauticApi',

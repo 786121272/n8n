@@ -1,6 +1,8 @@
+import type { QueryRunner, ObjectLiteral } from '@n8n/typeorm';
 import type { INodeTypes } from 'n8n-workflow';
-import type { QueryRunner, ObjectLiteral } from 'typeorm';
-import type { Logger } from '@/Logger';
+
+import type { Logger } from '@/logging/logger.service';
+
 import type { createSchemaBuilder } from './dsl';
 
 export type DatabaseType = 'mariadb' | 'postgresdb' | 'mysqldb' | 'sqlite';
@@ -11,6 +13,8 @@ export interface MigrationContext {
 	tablePrefix: string;
 	dbType: DatabaseType;
 	isMysql: boolean;
+	isSqlite: boolean;
+	isPostgres: boolean;
 	dbName: string;
 	migrationName: string;
 	nodeTypes: INodeTypes;
@@ -22,11 +26,7 @@ export interface MigrationContext {
 		tableName(name: string): string;
 		indexName(name: string): string;
 	};
-	runQuery<T>(
-		sql: string,
-		unsafeParameters?: ObjectLiteral,
-		nativeParameters?: ObjectLiteral,
-	): Promise<T>;
+	runQuery<T>(sql: string, namedParameters?: ObjectLiteral): Promise<T>;
 	runInBatches<T>(
 		query: string,
 		operation: (results: T[]) => Promise<void>,
@@ -63,3 +63,5 @@ export interface Migration extends Function {
 }
 
 export type InsertResult = Array<{ insertId: number }>;
+
+export { QueryFailedError } from '@n8n/typeorm/error/QueryFailedError';

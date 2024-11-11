@@ -1,26 +1,26 @@
-import { Container } from 'typedi';
-import { randomBytes } from 'crypto';
-import { existsSync } from 'fs';
-import { BinaryDataService, UserSettings } from 'n8n-core';
-import type { INode } from 'n8n-workflow';
-import { GithubApi } from 'n8n-nodes-base/credentials/GithubApi.credentials';
+import { BinaryDataService } from 'n8n-core';
 import { Ftp } from 'n8n-nodes-base/credentials/Ftp.credentials';
+import { GithubApi } from 'n8n-nodes-base/credentials/GithubApi.credentials';
 import { Cron } from 'n8n-nodes-base/nodes/Cron/Cron.node';
 import { Set } from 'n8n-nodes-base/nodes/Set/Set.node';
 import { Start } from 'n8n-nodes-base/nodes/Start/Start.node';
+import { type INode } from 'n8n-workflow';
 import type request from 'supertest';
+import { Container } from 'typedi';
 import { v4 as uuid } from 'uuid';
 
 import config from '@/config';
-import * as Db from '@/Db';
-import { WorkflowEntity } from '@db/entities/WorkflowEntity';
-import { ActiveWorkflowRunner } from '@/ActiveWorkflowRunner';
 import { AUTH_COOKIE_NAME } from '@/constants';
+import { WorkflowEntity } from '@/databases/entities/workflow-entity';
+import { SettingsRepository } from '@/databases/repositories/settings.repository';
+import { ExecutionService } from '@/executions/execution.service';
+import { LoadNodesAndCredentials } from '@/load-nodes-and-credentials';
+import { Push } from '@/push';
+import { OrchestrationService } from '@/services/orchestration.service';
 
-import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
+import { mockInstance } from '../../../shared/mocking';
 
-export { mockInstance } from './mocking';
-export { setupTestServer } from './testServer';
+export { setupTestServer } from './test-server';
 
 // ----------------------------------
 //          initializers
@@ -29,10 +29,17 @@ export { setupTestServer } from './testServer';
 /**
  * Initialize node types.
  */
-export async function initActiveWorkflowRunner(): Promise<ActiveWorkflowRunner> {
-	const workflowRunner = Container.get(ActiveWorkflowRunner);
-	await workflowRunner.init();
-	return workflowRunner;
+export async function initActiveWorkflowManager() {
+	mockInstance(OrchestrationService, {
+		isMultiMainSetupEnabled: false,
+	});
+
+	mockInstance(Push);
+	mockInstance(ExecutionService);
+	const { ActiveWorkflowManager } = await import('@/active-workflow-manager');
+	const activeWorkflowManager = Container.get(ActiveWorkflowManager);
+	await activeWorkflowManager.init();
+	return activeWorkflowManager;
 }
 
 /**
@@ -85,25 +92,13 @@ export async function initBinaryDataService(mode: 'default' | 'filesystem' = 'de
 }
 
 /**
- * Initialize a user settings config file if non-existent.
- */
-// TODO: this should be mocked
-export async function initEncryptionKey() {
-	const settingsPath = UserSettings.getUserSettingsPath();
-
-	if (!existsSync(settingsPath)) {
-		const userSettings = { encryptionKey: randomBytes(24).toString('base64') };
-		await UserSettings.writeUserSettings(userSettings, settingsPath);
-	}
-}
-
-/**
  * Extract the value (token) of the auth cookie in a response.
  */
 export function getAuthToken(response: request.Response, authCookieName = AUTH_COOKIE_NAME) {
-	const cookies: string[] = response.headers['set-cookie'];
+	const cookiesHeader = response.headers['set-cookie'];
+	if (!cookiesHeader) return undefined;
 
-	if (!cookies) return undefined;
+	const cookies = Array.isArray(cookiesHeader) ? cookiesHeader : [cookiesHeader];
 
 	const authCookie = cookies.find((c) => c.startsWith(`${authCookieName}=`));
 
@@ -121,7 +116,7 @@ export function getAuthToken(response: request.Response, authCookieName = AUTH_C
 // ----------------------------------
 
 export async function isInstanceOwnerSetUp() {
-	const { value } = await Db.collections.Settings.findOneByOrFail({
+	const { value } = await Container.get(SettingsRepository).findOneByOrFail({
 		key: 'userManagement.isInstanceOwnerSetUp',
 	});
 
@@ -131,7 +126,7 @@ export async function isInstanceOwnerSetUp() {
 export const setInstanceOwnerSetUp = async (value: boolean) => {
 	config.set('userManagement.isInstanceOwnerSetUp', value);
 
-	await Db.collections.Settings.update(
+	await Container.get(SettingsRepository).update(
 		{ key: 'userManagement.isInstanceOwnerSetUp' },
 		{ value: JSON.stringify(value) },
 	);
@@ -141,7 +136,7 @@ export const setInstanceOwnerSetUp = async (value: boolean) => {
 //           community nodes
 // ----------------------------------
 
-export * from './communityNodes';
+export * from './community-nodes';
 
 // ----------------------------------
 //           workflow

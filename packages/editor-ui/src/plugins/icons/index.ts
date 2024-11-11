@@ -7,12 +7,14 @@ import {
 	faAngleLeft,
 	faAngleRight,
 	faAngleUp,
+	faArchive,
 	faArrowLeft,
 	faArrowRight,
 	faArrowUp,
 	faArrowDown,
 	faAt,
 	faBan,
+	faBalanceScaleLeft,
 	faBars,
 	faBolt,
 	faBook,
@@ -74,8 +76,10 @@ import {
 	faGraduationCap,
 	faGripLinesVertical,
 	faGripVertical,
+	faHandHoldingUsd,
 	faHandScissors,
 	faHandPointLeft,
+	faHandshake,
 	faHashtag,
 	faHdd,
 	faHistory,
@@ -87,6 +91,7 @@ import {
 	faInfoCircle,
 	faKey,
 	faLanguage,
+	faLayerGroup,
 	faLink,
 	faList,
 	faLightbulb,
@@ -94,6 +99,7 @@ import {
 	faMapSigns,
 	faMousePointer,
 	faNetworkWired,
+	faPalette,
 	faPause,
 	faPauseCircle,
 	faPen,
@@ -125,10 +131,13 @@ import {
 	faSync,
 	faSyncAlt,
 	faTable,
+	faTags,
 	faTasks,
 	faTerminal,
 	faThLarge,
 	faThumbtack,
+	faThumbsDown,
+	faThumbsUp,
 	faTimes,
 	faTimesCircle,
 	faToolbox,
@@ -150,8 +159,10 @@ import {
 	faTools,
 	faProjectDiagram,
 	faStream,
+	faPowerOff,
+	faPaperPlane,
 } from '@fortawesome/free-solid-svg-icons';
-import { faVariable, faXmark, faVault } from './custom';
+import { faVariable, faXmark, faVault, faRefresh } from './custom';
 import { faStickyNote } from '@fortawesome/free-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 
@@ -159,19 +170,21 @@ function addIcon(icon: IconDefinition) {
 	library.add(icon);
 }
 
-export const FontAwesomePlugin: Plugin<{}> = {
+export const FontAwesomePlugin: Plugin = {
 	install: (app) => {
 		addIcon(faAngleDoubleLeft);
 		addIcon(faAngleDown);
 		addIcon(faAngleLeft);
 		addIcon(faAngleRight);
 		addIcon(faAngleUp);
+		addIcon(faArchive);
 		addIcon(faArrowLeft);
 		addIcon(faArrowRight);
 		addIcon(faArrowUp);
 		addIcon(faArrowDown);
 		addIcon(faAt);
 		addIcon(faBan);
+		addIcon(faBalanceScaleLeft);
 		addIcon(faBars);
 		addIcon(faBolt);
 		addIcon(faBook);
@@ -233,7 +246,9 @@ export const FontAwesomePlugin: Plugin<{}> = {
 		addIcon(faGlobe);
 		addIcon(faGlobeAmericas);
 		addIcon(faGraduationCap);
+		addIcon(faHandHoldingUsd);
 		addIcon(faHandScissors);
+		addIcon(faHandshake);
 		addIcon(faHandPointLeft);
 		addIcon(faHashtag);
 		addIcon(faHdd);
@@ -246,6 +261,7 @@ export const FontAwesomePlugin: Plugin<{}> = {
 		addIcon(faInfoCircle);
 		addIcon(faKey);
 		addIcon(faLanguage);
+		addIcon(faLayerGroup);
 		addIcon(faLink);
 		addIcon(faList);
 		addIcon(faLightbulb);
@@ -253,6 +269,7 @@ export const FontAwesomePlugin: Plugin<{}> = {
 		addIcon(faMapSigns);
 		addIcon(faMousePointer);
 		addIcon(faNetworkWired);
+		addIcon(faPalette);
 		addIcon(faPause);
 		addIcon(faPauseCircle);
 		addIcon(faPen);
@@ -289,10 +306,13 @@ export const FontAwesomePlugin: Plugin<{}> = {
 		addIcon(faSync);
 		addIcon(faSyncAlt);
 		addIcon(faTable);
+		addIcon(faTags);
 		addIcon(faTasks);
 		addIcon(faTerminal);
 		addIcon(faThLarge);
 		addIcon(faThumbtack);
+		addIcon(faThumbsDown);
+		addIcon(faThumbsUp);
 		addIcon(faTimes);
 		addIcon(faTimesCircle);
 		addIcon(faToolbox);
@@ -313,7 +333,10 @@ export const FontAwesomePlugin: Plugin<{}> = {
 		addIcon(faGem);
 		addIcon(faXmark);
 		addIcon(faDownload);
+		addIcon(faPowerOff);
+		addIcon(faPaperPlane);
+		addIcon(faRefresh);
 
-		app.component('font-awesome-icon', FontAwesomeIcon);
+		app.component('FontAwesomeIcon', FontAwesomeIcon);
 	},
 };

@@ -5,14 +5,12 @@ import {
 	type INodeExecutionData,
 	type INodeProperties,
 } from 'n8n-workflow';
-import { updateDisplayOptions, wrapData } from '@utils/utilities';
-
+import FormData from 'form-data';
 import { theHiveApiRequest } from '../../transport';
 
 import { fixFieldType, prepareInputItem } from '../../helpers/utils';
 import { alertRLC, attachmentsUi, caseRLC } from '../../descriptions';
-
-import FormData from 'form-data';
+import { updateDisplayOptions, wrapData } from '@utils/utilities';
 
 const properties: INodeProperties[] = [
 	{
@@ -56,7 +54,7 @@ const properties: INodeProperties[] = [
 		name: 'dataType',
 		type: 'options',
 		description:
-			'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code-examples/expressions/">expression</a>',
+			'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 		required: true,
 		default: 'file',
 		typeOptions: {

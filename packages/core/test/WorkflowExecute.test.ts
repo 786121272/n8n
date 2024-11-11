@@ -1,16 +1,17 @@
 import type { IRun, WorkflowTestData } from 'n8n-workflow';
-import { createDeferredPromise, Workflow } from 'n8n-workflow';
+import {
+	ApplicationError,
+	createDeferredPromise,
+	NodeExecutionOutput,
+	Workflow,
+} from 'n8n-workflow';
+
 import { WorkflowExecute } from '@/WorkflowExecute';
 
 import * as Helpers from './helpers';
-import { initLogger } from './helpers/utils';
 import { legacyWorkflowExecuteTests, v1WorkflowExecuteTests } from './helpers/constants';
 
 describe('WorkflowExecute', () => {
-	beforeAll(() => {
-		initLogger();
-	});
-
 	describe('v0 execution order', () => {
 		const tests: WorkflowTestData[] = legacyWorkflowExecuteTests;
 
@@ -30,7 +31,7 @@ describe('WorkflowExecute', () => {
 					},
 				});
 
-				const waitPromise = await createDeferredPromise<IRun>();
+				const waitPromise = createDeferredPromise<IRun>();
 				const nodeExecutionOrder: string[] = [];
 				const additionalData = Helpers.WorkflowExecuteAdditionalData(
 					waitPromise,
@@ -41,7 +42,7 @@ describe('WorkflowExecute', () => {
 
 				const executionData = await workflowExecute.run(workflowInstance);
 
-				const result = await waitPromise.promise();
+				const result = await waitPromise.promise;
 
 				// Check if the data from WorkflowExecute is identical to data received
 				// by the webhooks
@@ -50,7 +51,7 @@ describe('WorkflowExecute', () => {
 				// Check if the output data of the nodes is correct
 				for (const nodeName of Object.keys(testData.output.nodeData)) {
 					if (result.data.resultData.runData[nodeName] === undefined) {
-						throw new Error(`Data for node "${nodeName}" is missing!`);
+						throw new ApplicationError('Data for node is missing', { extra: { nodeName } });
 					}
 
 					const resultData = result.data.resultData.runData[nodeName].map((nodeData) => {
@@ -93,7 +94,7 @@ describe('WorkflowExecute', () => {
 					},
 				});
 
-				const waitPromise = await createDeferredPromise<IRun>();
+				const waitPromise = createDeferredPromise<IRun>();
 				const nodeExecutionOrder: string[] = [];
 				const additionalData = Helpers.WorkflowExecuteAdditionalData(
 					waitPromise,
@@ -104,7 +105,7 @@ describe('WorkflowExecute', () => {
 
 				const executionData = await workflowExecute.run(workflowInstance);
 
-				const result = await waitPromise.promise();
+				const result = await waitPromise.promise;
 
 				// Check if the data from WorkflowExecute is identical to data received
 				// by the webhooks
@@ -113,14 +114,17 @@ describe('WorkflowExecute', () => {
 				// Check if the output data of the nodes is correct
 				for (const nodeName of Object.keys(testData.output.nodeData)) {
 					if (result.data.resultData.runData[nodeName] === undefined) {
-						throw new Error(`Data for node "${nodeName}" is missing!`);
+						throw new ApplicationError('Data for node is missing', { extra: { nodeName } });
 					}
 
 					const resultData = result.data.resultData.runData[nodeName].map((nodeData) => {
 						if (nodeData.data === undefined) {
 							return null;
 						}
-						return nodeData.data.main[0]!.map((entry) => entry.json);
+						const toMap = testData.output.testAllOutputs
+							? nodeData.data.main
+							: [nodeData.data.main[0]!];
+						return toMap.map((data) => data!.map((entry) => entry.json));
 					});
 
 					// expect(resultData).toEqual(testData.output.nodeData[nodeName]);
@@ -157,7 +161,7 @@ describe('WorkflowExecute', () => {
 					settings: testData.input.workflowData.settings,
 				});
 
-				const waitPromise = await createDeferredPromise<IRun>();
+				const waitPromise = createDeferredPromise<IRun>();
 				const nodeExecutionOrder: string[] = [];
 				const additionalData = Helpers.WorkflowExecuteAdditionalData(
 					waitPromise,
@@ -168,7 +172,7 @@ describe('WorkflowExecute', () => {
 
 				const executionData = await workflowExecute.run(workflowInstance);
 
-				const result = await waitPromise.promise();
+				const result = await waitPromise.promise;
 
 				// Check if the data from WorkflowExecute is identical to data received
 				// by the webhooks
@@ -177,7 +181,7 @@ describe('WorkflowExecute', () => {
 				// Check if the output data of the nodes is correct
 				for (const nodeName of Object.keys(testData.output.nodeData)) {
 					if (result.data.resultData.runData[nodeName] === undefined) {
-						throw new Error(`Data for node "${nodeName}" is missing!`);
+						throw new ApplicationError('Data for node is missing', { extra: { nodeName } });
 					}
 
 					const resultData = result.data.resultData.runData[nodeName].map((nodeData) => {
@@ -196,5 +200,17 @@ describe('WorkflowExecute', () => {
 				expect(result.data.executionData!.nodeExecutionStack).toEqual([]);
 			});
 		}
+	});
+
+	describe('WorkflowExecute, NodeExecutionOutput type test', () => {
+		//TODO Add more tests here when execution hints are added to some node types
+		const nodeExecutionOutput = new NodeExecutionOutput(
+			[[{ json: { data: 123 } }]],
+			[{ message: 'TEXT HINT' }],
+		);
+
+		expect(nodeExecutionOutput).toBeInstanceOf(NodeExecutionOutput);
+		expect(nodeExecutionOutput[0][0].json.data).toEqual(123);
+		expect(nodeExecutionOutput.getHints()[0].message).toEqual('TEXT HINT');
 	});
 });

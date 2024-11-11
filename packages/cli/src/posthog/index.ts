@@ -1,29 +1,33 @@
-import { Service } from 'typedi';
-import type { PostHog } from 'posthog-node';
+import { GlobalConfig } from '@n8n/config';
+import { InstanceSettings } from 'n8n-core';
 import type { FeatureFlags, ITelemetryTrackProperties } from 'n8n-workflow';
+import type { PostHog } from 'posthog-node';
+import { Service } from 'typedi';
+
 import config from '@/config';
-import type { PublicUser } from '@/Interfaces';
+import type { PublicUser } from '@/interfaces';
 
 @Service()
 export class PostHogClient {
 	private postHog?: PostHog;
 
-	private instanceId?: string;
+	constructor(
+		private readonly instanceSettings: InstanceSettings,
+		private readonly globalConfig: GlobalConfig,
+	) {}
 
-	async init(instanceId: string) {
-		this.instanceId = instanceId;
+	async init() {
 		const enabled = config.getEnv('diagnostics.enabled');
 		if (!enabled) {
 			return;
 		}
 
-		// eslint-disable-next-line @typescript-eslint/naming-convention
 		const { PostHog } = await import('posthog-node');
 		this.postHog = new PostHog(config.getEnv('diagnostics.config.posthog.apiKey'), {
 			host: config.getEnv('diagnostics.config.posthog.apiHost'),
 		});
 
-		const logLevel = config.getEnv('logs.level');
+		const logLevel = this.globalConfig.logging.level;
 		if (logLevel === 'debug') {
 			this.postHog.debug(true);
 		}
@@ -46,11 +50,11 @@ export class PostHogClient {
 	async getFeatureFlags(user: Pick<PublicUser, 'id' | 'createdAt'>): Promise<FeatureFlags> {
 		if (!this.postHog) return {};
 
-		const fullId = [this.instanceId, user.id].join('#');
+		const fullId = [this.instanceSettings.instanceId, user.id].join('#');
 
 		// cannot use local evaluation because that requires PostHog personal api key with org-wide
 		// https://github.com/PostHog/posthog/issues/4849
-		return this.postHog.getAllFlags(fullId, {
+		return await this.postHog.getAllFlags(fullId, {
 			personProperties: {
 				created_at_timestamp: user.createdAt.getTime().toString(),
 			},
